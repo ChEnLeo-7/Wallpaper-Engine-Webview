@@ -365,6 +365,9 @@
 ================================================================ */
 const APPID = 431960, PAGE_SIZE = 30;
 const PROXY_DOMAINS = ['steamcommunity.com', 'api.steampowered.com', 'steamusercontent.com'];
+const API_PARAM = new URLSearchParams(location.search).get('api');
+const API_BASE = (API_PARAM || localStorage.getItem('wallhub_api_base') || '').trim().replace(/\/+$/,'');
+if(API_PARAM) localStorage.setItem('wallhub_api_base', API_BASE);
 
 const S = {
   page:1, totalPages:1, totalItems:0,
@@ -372,6 +375,11 @@ const S = {
   items:[],
   f:{ search:'', sort:'trend', days:'30', type:'', rating:'', genres:[] }
 };
+
+function apiUrl(path){
+  if(!path) return API_BASE || '';
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
 
 /* ================================================================
    GENRES
@@ -498,94 +506,6 @@ function buildParams(){
   return params;
 }
 
-async function querySteam(params){
-  const sortMap = {1:'trend',2:'mostrecent',21:'lastupdated',16:'totaluniquesubscribers'};
-  const sort = sortMap[parseInt(params.query_type)] || 'trend';
-  const url = new URL('https://steamcommunity.com/workshop/browse/');
-  url.searchParams.set('appid', String(params.appid || APPID));
-  url.searchParams.set('browsesort', sort);
-  url.searchParams.set('section', 'readytouseitems');
-  url.searchParams.set('actualsort', sort);
-  url.searchParams.set('p', String(params.page || 1));
-  url.searchParams.set('numperpage', String(params.numperpage || PAGE_SIZE));
-  if(params.search_text) url.searchParams.set('searchtext', params.search_text);
-  if(params.days && sort === 'trend' && String(params.days) !== '0') url.searchParams.set('days', String(params.days));
-  Object.entries(params).forEach(([k,v])=>{
-    if(/^requiredtags/.test(k) && v) url.searchParams.append('requiredtags[]', String(v));
-  });
-
-  const htmlRes = await fetch(url.toString(), { cache:'no-store' });
-  if(!htmlRes.ok) throw new Error(`Steam 列表请求失败：HTTP ${htmlRes.status}`);
-  const html = await htmlRes.text();
-
-  let totalCount = 0;
-  const showingM = html.match(/[Ss]howing\s+[\d,]+-[\d,]+\s+of\s+([\d,]+)/);
-  if (showingM) totalCount = parseInt(showingM[1].replace(/,/g,''));
-  if (!totalCount) {
-    const cnM = html.match(/共\s*([\d,]+)\s*(?:项|条|个)/);
-    if (cnM) totalCount = parseInt(cnM[1].replace(/,/g,''));
-  }
-  if (!totalCount) {
-    const pagingM = html.match(/workshopBrowsePagingInfo[^>]*>([\s\S]*?)<\/div>/);
-    if (pagingM) {
-      const numM = pagingM[1].match(/([\d,]+)\s*(?:entries|条|项)/i);
-      if (numM) totalCount = parseInt(numM[1].replace(/,/g,''));
-    }
-  }
-
-  const seen = new Set();
-  const ids = [];
-  for (const m of html.matchAll(/data-publishedfileid="(\d+)"/g)) {
-    if(!seen.has(m[1])){ seen.add(m[1]); ids.push(m[1]); }
-  }
-  if(!ids.length) return {response:{publishedfiledetails:[],total:0}};
-
-  let list = await getFileDetails(ids);
-  const genreOr = [];
-  Object.entries(params).forEach(([k,v])=>{
-    if(/^genre_or\[\d+\]$/.test(k) && v) genreOr.push(String(v).toLowerCase());
-  });
-  if(genreOr.length){
-    list = list.filter(it=>{
-      const tags = (it.tags||[]).map(t=>String((t&&t.tag)||t||'').toLowerCase());
-      return genreOr.some(g=>tags.includes(g));
-    });
-  }
-
-  return {response:{publishedfiledetails:list,total:totalCount || list.length}};
-}
-
-async function getFileDetails(ids){
-  const body = new URLSearchParams();
-  body.set('itemcount', String(ids.length));
-  ids.forEach((id,i)=>body.set(`publishedfileids[${i}]`, String(id)));
-  const res = await fetch('https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/',{
-    method:'POST',
-    headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body: body.toString()
-  });
-  if(!res.ok) throw new Error(`详情接口失败：HTTP ${res.status}`);
-  const data = await res.json();
-  return (data.response && data.response.publishedfiledetails) || [];
-}
-
-async function getDetailById(id){
-  const list = await getFileDetails([id]);
-  const d = list[0] || {};
-  return {
-    preview_url: d.preview_url || '',
-    description: d.file_description || d.description || d.short_description || '',
-    author: d.creator ? String(d.creator) : '',
-    tags: (d.tags || []).map(t=>t.tag||t).filter(Boolean),
-    subscriptions: fmtN(d.subscriptions || d.lifetime_subscriptions || 0),
-    favorited: fmtN(d.favorited || d.lifetime_favorited || 0),
-    views: fmtN(d.views || 0),
-    file_size: d.file_size ? fmtBytes(parseInt(d.file_size)) : '未知',
-    time_updated: d.time_updated ? fmtTime(d.time_updated) : '未知',
-    comments: []
-  };
-}
-
 /* ================================================================
    LOAD
 ================================================================ */
@@ -594,7 +514,19 @@ async function load(){
   S.loading=true;
   showLoading();
   try {
-    const data = await querySteam(buildParams());
+    const res  = await fetch(apiUrl('/api/steam/query'),{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({params:buildParams()})
+    });
+    if(!res.ok){
+      let serverMsg='';
+      try{
+        const j = await res.json();
+        serverMsg = j && (j.error || j.message) ? String(j.error || j.message) : '';
+      }catch{}
+      throw new Error(serverMsg || `服务器 ${res.status}`);
+    }
+    const data = await res.json();
     const resp = data.response||data;
     const list = resp.publishedfiledetails||[];
 
@@ -803,7 +735,8 @@ function openModal(id){
   document.body.style.overflow='hidden';
 
   // Fetch details
-  getDetailById(id)
+  fetch(apiUrl(`/api/steam/details?id=${id}`))
+    .then(r=>{ if(!r.ok) throw new Error(`${r.status}`); return r.json(); })
     .then(d=>{
       // Update image if better
       if(d.preview_url) document.getElementById('mImg').src=d.preview_url;
@@ -859,20 +792,53 @@ function mOvClick(e){ if(e.target===document.getElementById('mOv')) closeModal()
 ================================================================ */
 function dlWall(fid, title){
   const btn=document.getElementById(`sub-${fid}`);
+  let packTimer=0;
   if(btn){
     btn.classList.add('dling');
-    btn.innerHTML='<i>↗</i> 跳转中';
+    btn.innerHTML='<i>⏳</i> 正在处理';
+    packTimer=setTimeout(()=>{
+      if(!btn.classList.contains('dling')) return;
+      btn.innerHTML='<i>📦</i> 项目正在打包中';
+      toast('项目正在打包中，请稍候…','info');
+    },1800);
   }
-  const page = `https://steamcommunity.com/sharedfiles/filedetails/?id=${fid}`;
-  const steamUri = `steam://openurl/${page}`;
-  window.open(steamUri, '_blank');
-  setTimeout(()=>window.open(page, '_blank'), 120);
-  toast(`已跳转订阅页面：${title||fid}`, 'ok');
-  if(btn){
-    btn.classList.remove('dling');
-    btn.classList.add('done');
-    btn.innerHTML='<i>✓</i> 已跳转';
-  }
+  fetch(apiUrl(`/api/download?id=${fid}&title=${encodeURIComponent(title||'')}`))
+    .then(async r=>{
+      if(!r.ok){
+        let msg=`HTTP ${r.status}`;
+        try{
+          const j=await r.json();
+          msg=j.error||msg;
+        }catch{}
+        throw new Error(msg);
+      }
+      const d=r.headers.get('content-disposition')||'';
+      const m=d.match(/filename\*=UTF-8''([^;]+)/i) || d.match(/filename="([^"]+)"/i);
+      const name=decodeURIComponent((m&&m[1])?m[1]:(`${title||('wallpaper-'+fid)}.bin`));
+      return r.blob().then(b=>({b,name}));
+    })
+    .then(({b,name})=>{
+      if(packTimer) clearTimeout(packTimer);
+      const u=URL.createObjectURL(b);
+      const a=document.createElement('a');
+      a.href=u;
+      a.download=name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(u),1500);
+      toast(`已开始下载：${name}`, 'ok');
+      if(btn){
+        btn.classList.remove('dling');
+        btn.classList.add('done');
+        btn.innerHTML='<i>✓</i> 已下载';
+      }
+    })
+    .catch(e=>{
+      if(packTimer) clearTimeout(packTimer);
+      toast('工坊项目下载失败: '+e.message, 'warn');
+      if(btn){ btn.classList.remove('dling'); btn.innerHTML='<i>⚠</i> 失败'; }
+    });
 }
 
 /* ================================================================
@@ -880,11 +846,11 @@ function dlWall(fid, title){
 ================================================================ */
 async function checkServer(){
   try{
-    const r=await fetch(`https://steamcommunity.com/workshop/browse/?appid=${APPID}&section=readytouseitems&p=1&numperpage=1&_=${Date.now()}`,{cache:'no-store'});
-    if(r.ok){ document.getElementById('dot').className='dot ok'; document.getElementById('srvTxt').textContent='系统代理模式'; }
+    const r=await fetch(apiUrl(`/health?_=${Date.now()}`),{cache:'no-store'});
+    if(r.ok){ document.getElementById('dot').className='dot ok'; document.getElementById('srvTxt').textContent='服务在线'; }
   } catch{
     document.getElementById('dot').className='dot err';
-    document.getElementById('srvTxt').textContent='代理不可用';
+    document.getElementById('srvTxt').textContent='连接失败';
   }
 }
 
