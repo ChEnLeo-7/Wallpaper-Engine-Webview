@@ -70,6 +70,7 @@ This tool is designed to retrieve and download wallpaper data from the Steam Wor
 ## Quick Start
 
 1. **Clone/Download** this repository.
+   This project requires the Node.js runtime environment.
 2. **Start the Server**:
    ```bash
    node server.js
