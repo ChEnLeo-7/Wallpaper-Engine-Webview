@@ -8,6 +8,10 @@
   <a href="./README.md">简体中文</a>
 </p>
 
+## Important Notice
+Note: Depending on abusive usage, this project may later keep only the video download option if necessary; otherwise, the current behavior will remain unchanged.
+【This project is for emergency entertainment use only. Do not treat it as a justification for cracking or piracy.】
+
 ## Badges
 
 [![version](https://img.shields.io/badge/version-2.0.0-3fb950?style=flat-square)](https://semver.org/)
