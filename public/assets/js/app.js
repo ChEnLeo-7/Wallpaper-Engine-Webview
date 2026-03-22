@@ -419,6 +419,7 @@ function usageOvClick(e){ if(e.target===document.getElementById('usageOv')) clos
 
 function openSettingsModal(){
   updateSettingsCheckmarks();
+  refreshMemoryStatus(); // 刷新内存状态
   document.getElementById('settingsModalOv').classList.add('open');
   document.body.style.overflow='hidden';
 }
@@ -504,6 +505,8 @@ async function clearVideoCache(){
     if(res.ok){
       const data = await res.json();
       toast(`已清除 ${data.deletedCount || 0} 个缓存文件`, 'ok');
+      // 刷新内存状态
+      refreshMemoryStatus();
     } else {
       throw new Error('清除失败');
     }
@@ -513,11 +516,49 @@ async function clearVideoCache(){
   }
 }
 
+async function refreshMemoryStatus(){
+  try {
+    const res = await fetch('/api/memory/status');
+    if(res.ok){
+      const data = await res.json();
+      document.getElementById('heapUsed').textContent = `${data.heapUsedMB} MB`;
+      document.getElementById('heapTotal').textContent = `${data.heapTotalMB} MB`;
+      document.getElementById('rssMemory').textContent = `${data.rssMB} MB`;
+      document.getElementById('videoCacheCount').textContent = `${data.videoCacheSize} / ${data.videoCacheLimit}`;
+    }
+  } catch(e){
+    console.error('[Memory] Failed to fetch status:', e);
+  }
+}
+
+async function triggerGarbageCollection(){
+  try {
+    const res = await fetch('/api/memory/gc', {
+      method: 'POST'
+    });
+    
+    if(res.ok){
+      const data = await res.json();
+      if(data.success){
+        toast(`已释放 ${data.freedMB} MB 内存`, 'ok');
+        refreshMemoryStatus();
+      } else {
+        toast(data.error || '垃圾回收失败', 'warn');
+      }
+    } else {
+      const data = await res.json();
+      toast(data.error || '垃圾回收不可用', 'warn');
+    }
+  } catch(e){
+    console.error('[Memory] GC failed:', e);
+    toast('垃圾回收失败', 'warn');
+  }
+}
+
 function doSearch(){
   S.f.search = document.getElementById('searchInput').value.trim();
   S.page = 1; load();
 }
-
 function syncDaysVisible(){
   document.getElementById('daysGrp').style.display = S.f.sort==='trend' ? '' : 'none';
 }

@@ -82,11 +82,17 @@
 1. **下载**本项目代码
 2. **启动服务**：
    ```bash
+   # 标准启动
    node server.js
+   
+   # 推荐：启用手动垃圾回收（优化内存管理）
+   node --expose-gc server.js
    ```
 3. **访问网页**：在浏览器打开 `http://localhost:3090`  
 
 ### Docker 部署
+
+PS：虽然项目做了内存优化，但是还是建议加上内存限制参数！！！
 
 1. 下载完整的项目代码，在你部署的路径上新建文件夹 `node_server_data`  
 2. 将项目全部完整文件放到 `node_server_data` 文件夹下
@@ -137,7 +143,7 @@ RUN npm install -g nodemon pm2 2>/dev/null || true
 EXPOSE 3090
 
 # 默认命令，可被 docker-compose 覆盖
-CMD ["node", "server.js"]
+CMD ["node", "--expose-gc", "server.js"]
 ```
 **docker-compose.yml**
 ```docker-compose
@@ -168,9 +174,9 @@ services:
     # 工作目录
     working_dir: /app
     # 启动命令（如果需要覆盖 Dockerfile 中的 CMD）
-    command: node server.js
+    command: node --expose-gc server.js
     # 或者使用 nodemon 进行开发
-    # command: nodemon server.js
+    # command: nodemon --expose-gc server.js
     # 网络模式
     networks:
       - app-network

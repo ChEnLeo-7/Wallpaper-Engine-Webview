@@ -2191,6 +2191,9 @@ body.theme-light .head-login-btn.logged-in {
   border-radius: 16px;
   max-width: 480px;
   width: 100%;
+  max-height: 90vh; /* 限制最大高度 */
+  display: flex;
+  flex-direction: column; /* 使用 flex 布局 */
   overflow: hidden;
   transform: scale(0.95) translateY(10px);
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2206,6 +2209,7 @@ body.theme-light .head-login-btn.logged-in {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-shrink: 0; /* 防止头部被压缩 */
 }
 .login-modal-title {
   font-size: 17px;
@@ -2214,6 +2218,31 @@ body.theme-light .head-login-btn.logged-in {
 }
 .login-modal-body {
   padding: 20px 24px;
+  overflow-y: auto; /* 启用垂直滚动 */
+  overflow-x: hidden; /* 隐藏水平滚动 */
+  flex: 1; /* 占据剩余空间 */
+  min-height: 0; /* 允许 flex 子元素缩小 */
+}
+
+/* 登录模态框滚动条样式 */
+.login-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.login-modal-body::-webkit-scrollbar-track {
+  background: var(--bg2);
+}
+.login-modal-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.login-modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Firefox 滚动条样式 */
+.login-modal-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg2);
 }
 .login-info {
   display: flex;
@@ -2273,6 +2302,7 @@ body.theme-light .head-login-btn.logged-in {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  flex-shrink: 0; /* 防止底部被压缩 */
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -2301,6 +2331,9 @@ body.theme-light .head-login-btn.logged-in {
   border-radius: 16px;
   max-width: 480px;
   width: 100%;
+  max-height: 90vh; /* 限制最大高度 */
+  display: flex;
+  flex-direction: column; /* 使用 flex 布局 */
   overflow: hidden;
   transform: scale(0.95) translateY(10px);
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2316,6 +2349,7 @@ body.theme-light .head-login-btn.logged-in {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-shrink: 0; /* 防止头部被压缩 */
 }
 .settings-modal-title {
   font-size: 17px;
@@ -2327,6 +2361,31 @@ body.theme-light .head-login-btn.logged-in {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  overflow-y: auto; /* 启用垂直滚动 */
+  overflow-x: hidden; /* 隐藏水平滚动 */
+  flex: 1; /* 占据剩余空间 */
+  min-height: 0; /* 允许 flex 子元素缩小 */
+}
+
+/* 设置模态框滚动条样式 */
+.settings-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.settings-modal-body::-webkit-scrollbar-track {
+  background: var(--bg2);
+}
+.settings-modal-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.settings-modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Firefox 滚动条样式 */
+.settings-modal-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg2);
 }
 .settings-section {
   display: flex;
@@ -2438,18 +2497,64 @@ body.theme-light .head-login-btn.logged-in {
   transform: translateY(-1px);
 }
 @media (max-width: 480px) {
+  .settings-modal {
+    max-height: 85vh; /* 移动端稍微降低高度 */
+    margin: 10px;
+    border-radius: 12px;
+  }
+  .settings-modal-head {
+    padding: 16px 20px 12px;
+  }
+  .settings-modal-title {
+    font-size: 16px;
+  }
+  .settings-modal-body {
+    padding: 16px 20px 24px; /* 增加底部内边距 */
+    gap: 20px;
+  }
   .settings-input-group {
     flex-direction: column;
     align-items: stretch;
   }
   .settings-input-group label {
     width: 100%;
+    font-size: 13px;
   }
   .settings-input {
     width: 100%;
   }
   .settings-save-btn {
     width: 100%;
+  }
+  .settings-section-title {
+    font-size: 13px;
+  }
+  .settings-option {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  /* 内存监控移动端优化 */
+  .memory-status {
+    padding: 10px;
+    gap: 6px;
+  }
+  .memory-item {
+    font-size: 12px;
+    gap: 8px;
+  }
+  .memory-label {
+    font-size: 11px;
+  }
+  .memory-value {
+    font-size: 12px;
+  }
+  .memory-actions {
+    flex-direction: column; /* 移动端垂直排列 */
+    gap: 6px;
+  }
+  .memory-actions .settings-save-btn {
+    width: 100%; /* 移动端全宽 */
+    min-width: 0;
   }
 }
 .settings-danger {
@@ -2459,6 +2564,47 @@ body.theme-light .head-login-btn.logged-in {
   border-color: var(--danger);
   background: rgba(244, 92, 92, 0.1);
 }
+
+/* Memory Monitor Styles */
+.memory-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg2);
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+}
+.memory-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  flex-wrap: wrap; /* 允许换行 */
+  gap: 4px;
+}
+.memory-label {
+  color: var(--text3);
+  flex: 1;
+  min-width: 0; /* 允许文本缩小 */
+  word-break: break-word; /* 长文本换行 */
+}
+.memory-value {
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap; /* 数值不换行 */
+}
+.memory-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap; /* 允许按钮换行 */
+}
+.memory-actions .settings-save-btn {
+  flex: 1;
+  min-width: 120px; /* 最小宽度 */
+}
+
 .head-settings-btn {
   width: 34px;
   height: 34px;
@@ -2614,6 +2760,19 @@ body.theme-light .head-settings-btn:hover {
 @media (max-width: 768px) {
   .login-modal {
     max-width: 95vw;
+    max-height: 85vh; /* 移动端降低高度 */
+  }
+  .login-modal-head {
+    padding: 16px 20px 12px;
+  }
+  .login-modal-title {
+    font-size: 16px;
+  }
+  .login-modal-body {
+    padding: 16px 20px;
+  }
+  .login-modal-foot {
+    padding: 12px 20px;
   }
   .video-modal {
     max-width: 95vw;
@@ -2628,5 +2787,19 @@ body.theme-light .head-settings-btn:hover {
   .modal-play-btn,
   .modal-sub-btn {
     width: 100%;
+  }
+}
+
+/* 小屏幕移动端优化 */
+@media (max-width: 480px) {
+  .login-modal,
+  .settings-modal {
+    max-height: 80vh; /* 小屏幕进一步降低 */
+    margin: 10px;
+    border-radius: 12px;
+  }
+  .login-modal-ov,
+  .settings-modal-ov {
+    padding: 10px;
   }
 }

@@ -1139,7 +1139,9 @@ function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 function runProcess(bin, args, timeoutMs, options = {}) {
-  return new Promise((resolve, reject) => {
+  let killFn = null;
+  
+  const promise = new Promise((resolve, reject) => {
     const spawnOptions = Object.assign({
       windowsHide: true,
       env: Object.assign({}, process.env)
@@ -1151,6 +1153,7 @@ function runProcess(bin, args, timeoutMs, options = {}) {
       try { cp.kill(); } catch {}
       reject(new Error('外部下载进程超时'));
     }, timeoutMs || 240000);
+    
     cp.stdout.on('data', d => out += d.toString());
     cp.stderr.on('data', d => err += d.toString());
     cp.on('error', e => {
@@ -1162,7 +1165,23 @@ function runProcess(bin, args, timeoutMs, options = {}) {
       if (code === 0) return resolve({ out, err });
       reject(new Error((err || out || `exit ${code}`).trim().slice(-1200)));
     });
+    
+    // 暴露 kill 方法，允许外部中断进程
+    killFn = () => {
+      clearTimeout(timer);
+      try {
+        cp.kill('SIGTERM');
+        setTimeout(() => {
+          try { cp.kill('SIGKILL'); } catch {}
+        }, 1000);
+      } catch {}
+      reject(new Error('Process killed by user'));
+    };
   });
+  
+  // 将 kill 方法附加到 Promise 对象
+  promise.kill = killFn;
+  return promise;
 }
 async function resolveSteamCmdPath() {
   const candidates = [
@@ -1353,10 +1372,10 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
   const pass = webPass || envPass || (localAcc && localAcc.pass) || '';
   const guard = webGuard || '';
   
-  // 如果有持久化登录，使用 STEAM_CONFIG_DIR 作为安装目录
+  // 如果有持久化登录或账号登录，使用 STEAM_CONFIG_DIR 作为安装目录
   // 这样可以复用已登录的会话，避免重复登录
-  // 匿名下载使用临时目录
-  const useSharedDir = isPersistent && user;
+  // 只有匿名下载才使用临时目录
+  const useSharedDir = (isPersistent && user) || (user && pass);
   const tempRoot = useSharedDir 
     ? STEAM_CONFIG_DIR 
     : fs.mkdtempSync(path.join(os.tmpdir(), 'wallhub-steamcmd-'));
@@ -1369,11 +1388,13 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
     console.log(`[SteamCMD] Using persistent login: ${user} (shared dir: ${useSharedDir})`);
     attempts.push({ name: 'persistent', loginArgs: ['+login', user] });
   } else if (user && pass) {
-    console.log(`[SteamCMD] Using account login: ${user}`);
+    console.log(`[SteamCMD] Using account login: ${user} (shared dir: ${useSharedDir})`);
     attempts.push({ name: 'account', loginArgs: guard ? ['+login', user, pass, guard] : ['+login', user, pass] });
+  } else {
+    // 只有在没有账号信息时才使用匿名登录
+    console.log(`[SteamCMD] Using anonymous login (temp dir: ${tempRoot})`);
+    attempts.push({ name: 'anonymous', loginArgs: ['+login', 'anonymous'] });
   }
-  
-  attempts.push({ name: 'anonymous', loginArgs: ['+login', 'anonymous'] });
   
   let lastErr = '';
   const variants = [
@@ -1390,60 +1411,125 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
     steamcmdArgsPrefix = [steamcmd];
   }
   
-  for (const at of attempts) {
-    for (const variant of variants) {
-      try {
-        console.log(`[SteamCMD] Trying ${at.name}/${variant.name} for item ${publishedFileId}...`);
-        
-        const args = [
-          ...steamcmdArgsPrefix,
-          '+@ShutdownOnFailedCommand', '1',
-          '+@NoPromptForPassword', '1',
-          '+force_install_dir', tempRoot,
-          ...at.loginArgs,
-          ...variant.itemArgs,
-          '+quit',
-        ];
-        
-        await runProcess(steamcmdCommand, args, 300000);
-        
-        const discovered = findWorkshopItemDir(tempRoot, appId, publishedFileId);
-        if (discovered && fs.existsSync(discovered)) {
-          const files = fs.readdirSync(discovered);
-          if (files.length) {
-            itemDir = discovered;
-            console.log(`[SteamCMD] Success with ${at.name}/${variant.name}, found ${files.length} files`);
-            break;
-          }
+  // 用于存储当前运行的进程，以便中断
+  let currentProcess = null;
+  
+  // 暴露中断方法
+  const abortController = {
+    aborted: false,
+    abort: () => {
+      abortController.aborted = true;
+      if (currentProcess && currentProcess.kill) {
+        console.log(`[SteamCMD] Aborting download for item ${publishedFileId}...`);
+        currentProcess.kill();
+      }
+    }
+  };
+  
+  // 将 abortController 附加到 options，以便外部调用
+  if (options) {
+    options.abortController = abortController;
+  }
+  
+  try {
+    for (const at of attempts) {
+      for (const variant of variants) {
+        if (abortController.aborted) {
+          throw new Error('Download aborted by client');
         }
-        const reason = extractSteamCmdFailure(steamcmd, appId, publishedFileId);
-        lastErr = `${at.name}/${variant.name} 未产出文件${reason ? `（${reason}）` : ''}`;
-        console.warn(`[SteamCMD] ${lastErr}`);
-      } catch (e) {
-        const reason = extractSteamCmdFailure(steamcmd, appId, publishedFileId);
-        lastErr = `${at.name}/${variant.name} 失败: ${e.message}${reason ? `（${reason}）` : ''}`;
-        console.warn(`[SteamCMD] ${lastErr}`);
+        
+        try {
+          console.log(`[SteamCMD] Trying ${at.name}/${variant.name} for item ${publishedFileId}...`);
+          
+          const args = [
+            ...steamcmdArgsPrefix,
+            '+@ShutdownOnFailedCommand', '1',
+            '+@NoPromptForPassword', '1',
+            '+force_install_dir', tempRoot,
+            ...at.loginArgs,
+            ...variant.itemArgs,
+            '+quit',
+          ];
+          
+          currentProcess = runProcess(steamcmdCommand, args, 300000);
+          await currentProcess;
+          currentProcess = null;
+          
+          if (abortController.aborted) {
+            throw new Error('Download aborted by client');
+          }
+          
+          const discovered = findWorkshopItemDir(tempRoot, appId, publishedFileId);
+          if (discovered && fs.existsSync(discovered)) {
+            const files = fs.readdirSync(discovered);
+            if (files.length) {
+              itemDir = discovered;
+              console.log(`[SteamCMD] Success with ${at.name}/${variant.name}, found ${files.length} files`);
+              break;
+            }
+          }
+          const reason = extractSteamCmdFailure(steamcmd, appId, publishedFileId);
+          lastErr = `${at.name}/${variant.name} 未产出文件${reason ? `（${reason}）` : ''}`;
+          console.warn(`[SteamCMD] ${lastErr}`);
+        } catch (e) {
+          if (abortController.aborted) {
+            throw new Error('Download aborted by client');
+          }
+          const reason = extractSteamCmdFailure(steamcmd, appId, publishedFileId);
+          lastErr = `${at.name}/${variant.name} 失败: ${e.message}${reason ? `（${reason}）` : ''}`;
+          console.warn(`[SteamCMD] ${lastErr}`);
+        }
+        if (fs.existsSync(itemDir) && fs.readdirSync(itemDir).length) break;
       }
       if (fs.existsSync(itemDir) && fs.readdirSync(itemDir).length) break;
     }
-    if (fs.existsSync(itemDir) && fs.readdirSync(itemDir).length) break;
-  }
-  
-  if (!fs.existsSync(itemDir)) {
-    // 只清理临时目录，不清理共享目录
-    if (!useSharedDir) {
-      try {
-        if (fs.existsSync(tempRoot)) {
-          fs.rmSync(tempRoot, { recursive: true, force: true });
+    
+    if (!fs.existsSync(itemDir)) {
+      // 只清理临时目录，不清理共享目录
+      if (!useSharedDir) {
+        try {
+          if (fs.existsSync(tempRoot)) {
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+          }
+        } catch (e) {
+          console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
         }
-      } catch (e) {
-        console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
+      }
+      throw new Error(lastErr || 'SteamCMD 执行完成但未产出工坊文件目录');
+    }
+    
+    if (!fs.readdirSync(itemDir).length) {
+      // 清理临时目录
+      if (!useSharedDir) {
+        try {
+          if (fs.existsSync(tempRoot)) {
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+          }
+        } catch (e) {
+          console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
+        }
+      }
+      throw new Error(user && pass
+        ? `SteamCMD 未下载到文件（${lastErr}）`
+        : `匿名下载失败（${lastErr}），请尝试登录 Steam 账号后重试`);
+    }
+    
+    const wantVideoOnly = !!(options && options.videoOnly);
+    if (wantVideoOnly) {
+      const videoPath = pickVideoFile(itemDir);
+      if (videoPath) {
+        const videoExt = extFromPath(videoPath, '.mp4');
+        const videoName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}${videoExt}`;
+        console.log(`[SteamCMD] Found video file: ${videoPath}`);
+        return { kind: 'file', filePath: videoPath, fileName: videoName, tempRoot, useSharedDir };
       }
     }
-    throw new Error(lastErr || 'SteamCMD 执行完成但未产出工坊文件目录');
-  }
-  
-  if (!fs.readdirSync(itemDir).length) {
+    const zipName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}.zip`;
+    const zipPath = path.join(DOWNLOAD_DIR, zipName);
+    await zipDir(itemDir, zipPath);
+    
+    console.log(`[SteamCMD] Created zip: ${zipPath}`);
+    
     // 清理临时目录
     if (!useSharedDir) {
       try {
@@ -1454,39 +1540,25 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
         console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
       }
     }
-    throw new Error(user && pass
-      ? `SteamCMD 未下载到文件（${lastErr}）`
-      : `匿名下载失败（${lastErr}），请尝试登录 Steam 账号后重试`);
-  }
-  
-  const wantVideoOnly = !!(options && options.videoOnly);
-  if (wantVideoOnly) {
-    const videoPath = pickVideoFile(itemDir);
-    if (videoPath) {
-      const videoExt = extFromPath(videoPath, '.mp4');
-      const videoName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}${videoExt}`;
-      console.log(`[SteamCMD] Found video file: ${videoPath}`);
-      return { kind: 'file', filePath: videoPath, fileName: videoName, tempRoot, useSharedDir };
-    }
-  }
-  const zipName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}.zip`;
-  const zipPath = path.join(DOWNLOAD_DIR, zipName);
-  await zipDir(itemDir, zipPath);
-  
-  console.log(`[SteamCMD] Created zip: ${zipPath}`);
-  
-  // 清理临时目录
-  if (!useSharedDir) {
-    try {
-      if (fs.existsSync(tempRoot)) {
-        fs.rmSync(tempRoot, { recursive: true, force: true });
+    
+    return { kind: 'zip', zipPath, zipName };
+  } catch (e) {
+    // 如果是中断错误，清理临时目录
+    if (abortController.aborted || e.message.includes('aborted')) {
+      console.log(`[SteamCMD] Download aborted, cleaning up for item ${publishedFileId}...`);
+      if (!useSharedDir) {
+        try {
+          if (fs.existsSync(tempRoot)) {
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+            console.log(`[SteamCMD] Cleaned up aborted download: ${tempRoot}`);
+          }
+        } catch (cleanupErr) {
+          console.warn('[SteamCMD] Failed to cleanup aborted download:', cleanupErr.message);
+        }
       }
-    } catch (e) {
-      console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
     }
+    throw e;
   }
-  
-  return { kind: 'zip', zipPath, zipName };
 }
 async function handleDownload(res, id, title) {
   const wantId = parseInt(id);
@@ -1567,19 +1639,58 @@ async function handleSteamLogin(req, res) {
 
   console.log(`[Steam Login] Attempting login for user: ${username}, SteamGuard: ${steamGuardCode ? 'Yes' : 'No'}, Retry: ${isRetry}`);
 
-  // 如果是重试且有验证码，直接保存凭据
+  // 如果是重试且有验证码，需要通过 SteamCMD 验证并持久化
   if (isRetry && steamGuardCode) {
-    STEAM_CREDENTIALS.username = username;
-    STEAM_CREDENTIALS.password = password;
-    STEAM_CREDENTIALS.steamGuardCode = steamGuardCode;
-    STEAM_CREDENTIALS.isPersistent = false; // Web登录不是持久化的
-    console.log(`[Steam Login] Credentials saved with Steam Guard code`);
-    return jsonRes(res, 200, { 
-      success: true, 
-      message: '登录凭据已保存（含 Steam Guard）',
-      username: username,
-      hasSteamGuard: true
-    });
+    try {
+      const steamcmd = await ensureSteamCmdReady();
+      const installDir = STEAM_CONFIG_DIR;
+      
+      if (!fs.existsSync(installDir)) {
+        fs.mkdirSync(installDir, { recursive: true });
+      }
+
+      let steamcmdCommand, steamcmdArgsPrefix;
+      if (process.platform === 'win32') {
+        steamcmdCommand = steamcmd;
+        steamcmdArgsPrefix = [];
+      } else {
+        steamcmdCommand = '/bin/bash';
+        steamcmdArgsPrefix = [steamcmd];
+      }
+
+      const loginArgs = [
+        ...steamcmdArgsPrefix,
+        '+@ShutdownOnFailedCommand', '1',
+        '+@NoPromptForPassword', '1',
+        '+force_install_dir', installDir,
+        '+login', username, password, steamGuardCode,
+        '+quit'
+      ];
+
+      console.log(`[Steam Login] Verifying Steam Guard code and persisting login to ${installDir}...`);
+      await runProcess(steamcmdCommand, loginArgs, 60000);
+      
+      // 登录成功，保存凭据（标记为持久化）
+      STEAM_CREDENTIALS.username = username;
+      STEAM_CREDENTIALS.password = ''; // 持久化后不需要保存密码
+      STEAM_CREDENTIALS.steamGuardCode = '';
+      STEAM_CREDENTIALS.isPersistent = true; // 标记为持久化登录
+      
+      console.log(`[Steam Login] Steam Guard verified, credentials persisted for user: ${username}`);
+      return jsonRes(res, 200, { 
+        success: true, 
+        message: '登录成功，凭据已持久化',
+        username: username,
+        hasSteamGuard: true,
+        isPersistent: true
+      });
+    } catch (e) {
+      console.error(`[Steam Login] Steam Guard verification failed:`, e.message);
+      return jsonRes(res, 401, { 
+        error: 'Steam Guard 验证失败，请检查验证码是否正确',
+        needsSteamGuard: true
+      });
+    }
   }
 
   // 验证 SteamCMD 登录
@@ -1717,6 +1828,20 @@ async function handleSteamStatus(req, res) {
 //  Video Streaming API - 下载到本地后串流
 // ─────────────────────────────────────────────────────────────────
 const VIDEO_CACHE = new Map(); // 缓存视频文件路径
+const MAX_VIDEO_CACHE_SIZE = 100; // 最大缓存数量
+const ACTIVE_DOWNLOADS = new Map(); // 跟踪正在进行的下载
+
+// LRU 缓存管理：当缓存超过限制时，删除最旧的条目
+function addToVideoCache(id, path) {
+  if (VIDEO_CACHE.size >= MAX_VIDEO_CACHE_SIZE) {
+    // 删除最早添加的条目（Map 保持插入顺序）
+    const firstKey = VIDEO_CACHE.keys().next().value;
+    VIDEO_CACHE.delete(firstKey);
+    console.log(`[Video Cache] Removed oldest cache entry: ${firstKey}`);
+  }
+  VIDEO_CACHE.set(id, path);
+  console.log(`[Video Cache] Added to cache: ${id}, total: ${VIDEO_CACHE.size}`);
+}
 
 async function handleVideoStream(req, res, id) {
   const wantId = parseInt(id);
@@ -1724,68 +1849,153 @@ async function handleVideoStream(req, res, id) {
 
   console.log(`[Video Stream] Request for id=${wantId}`);
 
+  // 检测客户端断开连接
+  let clientDisconnected = false;
+  const onClientDisconnect = () => {
+    clientDisconnected = true;
+    console.log(`[Video Stream] Client disconnected for id=${wantId}`);
+  };
+  
+  req.on('close', onClientDisconnect);
+  req.on('aborted', onClientDisconnect);
+
   // 先检查缓存，如果已有缓存则直接使用，无需查询 Steam API
   let videoPath = VIDEO_CACHE.get(String(wantId));
   
   if (videoPath && fs.existsSync(videoPath)) {
     console.log(`[Video Stream] Using cached video: ${videoPath}`);
   } else {
-    // 只有在没有缓存时才查询 Steam API
-    let d = null;
-    try {
-      const list = await getFileDetails([String(wantId)]);
-      d = list[0] && list[0].result === 1 ? list[0] : null;
-    } catch (e) {
-      return jsonRes(res, 502, { error: `Steam detail error: ${e.message}` });
-    }
-
-    if (!d) return jsonRes(res, 404, { error: '壁纸不存在或不可见' });
-
-    const appId = parseInt(d.consumer_appid || d.consumer_app_id || d.appid || 431960) || 431960;
-    const isVideo = detectVideoTag(d);
-
-    if (!isVideo) {
-      return jsonRes(res, 400, { error: '该项目不是视频类型' });
-    }
-
-    console.log(`[Video Stream] Downloading video for id=${wantId}...`);
-    
-    try {
-      const downloaded = await downloadViaSteamCmd(wantId, appId, d.title, { videoOnly: true });
-      
-      if (downloaded.kind === 'file') {
-        videoPath = downloaded.filePath;
-        
-        // 直接使用下载的视频文件路径，不再复制
-        // 如果使用的是共享目录（持久化登录），文件会保留在 workshop 目录
-        // 如果使用的是临时目录（匿名下载），文件会在使用后被清理
-        VIDEO_CACHE.set(String(wantId), videoPath);
-        console.log(`[Video Stream] Video ready at: ${videoPath}`);
-        
-        // 如果使用的是临时目录，需要在响应结束后清理
-        if (!downloaded.useSharedDir && downloaded.tempRoot) {
-          res.on('finish', () => {
-            setTimeout(() => {
-              try {
-                if (fs.existsSync(downloaded.tempRoot)) {
-                  fs.rmSync(downloaded.tempRoot, { recursive: true, force: true });
-                  console.log(`[Video Stream] Cleaned up temp dir: ${downloaded.tempRoot}`);
-                  // 清理缓存引用
-                  VIDEO_CACHE.delete(String(wantId));
-                }
-              } catch (e) {
-                console.warn('[Video Stream] Failed to cleanup temp dir:', e.message);
-              }
-            }, 5000); // 延迟5秒清理，确保传输完成
-          });
+    // 检查是否已有相同视频正在下载
+    if (ACTIVE_DOWNLOADS.has(String(wantId))) {
+      console.log(`[Video Stream] Download already in progress for id=${wantId}, waiting...`);
+      try {
+        // 等待现有下载完成
+        videoPath = await ACTIVE_DOWNLOADS.get(String(wantId));
+        if (clientDisconnected) {
+          console.log(`[Video Stream] Client disconnected while waiting, aborting`);
+          return;
         }
-      } else {
-        return jsonRes(res, 500, { error: '无法获取视频文件' });
+      } catch (e) {
+        return jsonRes(res, 500, { error: `等待下载失败: ${e.message}` });
       }
-    } catch (e) {
-      console.error('[Video Stream Download Error]', e.message);
-      return jsonRes(res, 409, { error: `视频下载失败: ${e.message}` });
+    } else {
+      // 只有在没有缓存时才查询 Steam API
+      let d = null;
+      try {
+        const list = await getFileDetails([String(wantId)]);
+        d = list[0] && list[0].result === 1 ? list[0] : null;
+      } catch (e) {
+        return jsonRes(res, 502, { error: `Steam detail error: ${e.message}` });
+      }
+
+      if (!d) return jsonRes(res, 404, { error: '壁纸不存在或不可见' });
+
+      const appId = parseInt(d.consumer_appid || d.consumer_app_id || d.appid || 431960) || 431960;
+      const isVideo = detectVideoTag(d);
+
+      if (!isVideo) {
+        return jsonRes(res, 400, { error: '该项目不是视频类型' });
+      }
+
+      console.log(`[Video Stream] Downloading video for id=${wantId}...`);
+      
+      // 创建下载 Promise
+      const downloadPromise = (async () => {
+        try {
+          // 创建 options 对象
+          const downloadOptions = { videoOnly: true };
+          
+          // 监听客户端断开，触发下载中断
+          const abortOnDisconnect = () => {
+            if (downloadOptions.abortController) {
+              console.log(`[Video Stream] Triggering abort for id=${wantId} due to client disconnect`);
+              downloadOptions.abortController.abort();
+            }
+          };
+          req.once('close', abortOnDisconnect);
+          req.once('aborted', abortOnDisconnect);
+          
+          const downloaded = await downloadViaSteamCmd(wantId, appId, d.title, downloadOptions);
+          
+          // 如果客户端已断开，清理下载的文件
+          if (clientDisconnected && !downloaded.useSharedDir && downloaded.tempRoot) {
+            console.log(`[Video Stream] Cleaning up abandoned download for id=${wantId}`);
+            try {
+              if (fs.existsSync(downloaded.tempRoot)) {
+                fs.rmSync(downloaded.tempRoot, { recursive: true, force: true });
+              }
+            } catch (e) {
+              console.warn('[Video Stream] Failed to cleanup abandoned download:', e.message);
+            }
+            throw new Error('Client disconnected');
+          }
+          
+          if (downloaded.kind === 'file') {
+            videoPath = downloaded.filePath;
+            
+            // 直接使用下载的视频文件路径，不再复制
+            // 如果使用的是共享目录（持久化登录），文件会保留在 workshop 目录
+            // 如果使用的是临时目录（匿名下载），文件会在使用后被清理
+            addToVideoCache(String(wantId), videoPath);
+            console.log(`[Video Stream] Video ready at: ${videoPath}`);
+            
+            // 如果使用的是临时目录，需要在响应结束后清理
+            if (!downloaded.useSharedDir && downloaded.tempRoot) {
+              const cleanupHandler = () => {
+                setTimeout(() => {
+                  try {
+                    if (fs.existsSync(downloaded.tempRoot)) {
+                      fs.rmSync(downloaded.tempRoot, { recursive: true, force: true });
+                      console.log(`[Video Stream] Cleaned up temp dir: ${downloaded.tempRoot}`);
+                      // 清理缓存引用
+                      VIDEO_CACHE.delete(String(wantId));
+                    }
+                  } catch (e) {
+                    console.warn('[Video Stream] Failed to cleanup temp dir:', e.message);
+                  }
+                }, 5000); // 延迟5秒清理，确保传输完成
+              };
+              
+              // 使用 once 而不是 on，避免重复监听
+              res.once('finish', cleanupHandler);
+              res.once('close', cleanupHandler);
+            }
+            
+            return videoPath;
+          } else {
+            throw new Error('无法获取视频文件');
+          }
+        } finally {
+          // 下载完成或失败后，从活动下载列表中移除
+          ACTIVE_DOWNLOADS.delete(String(wantId));
+        }
+      })();
+      
+      // 将下载 Promise 添加到活动下载列表
+      ACTIVE_DOWNLOADS.set(String(wantId), downloadPromise);
+      
+      try {
+        videoPath = await downloadPromise;
+        if (clientDisconnected) {
+          console.log(`[Video Stream] Client disconnected after download, aborting stream`);
+          return;
+        }
+      } catch (e) {
+        console.error('[Video Stream Download Error]', e.message);
+        // 如果是客户端断开导致的错误，不返回错误响应
+        if (clientDisconnected || e.message.includes('aborted') || e.message.includes('killed')) {
+          console.log(`[Video Stream] Download interrupted for id=${wantId}`);
+          return;
+        }
+        return jsonRes(res, 409, { error: `视频下载失败: ${e.message}` });
+      }
     }
+  }
+
+  // 如果客户端已断开，不再串流
+  if (clientDisconnected) {
+    console.log(`[Video Stream] Client disconnected, skipping stream`);
+    return;
   }
 
   // 串流视频文件
@@ -1803,7 +2013,12 @@ async function handleVideoStream(req, res, id) {
       
       console.log(`[Video Stream] Range request: ${start}-${end}/${fileSize}`);
       
-      const stream = fs.createReadStream(videoPath, { start, end, highWaterMark: 1024 * 1024 });
+      // 优化：使用较小的 highWaterMark 减少内存占用
+      const stream = fs.createReadStream(videoPath, { 
+        start, 
+        end, 
+        highWaterMark: 256 * 1024 // 256KB chunks instead of 1MB
+      });
 
       res.writeHead(206, {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -1816,13 +2031,27 @@ async function handleVideoStream(req, res, id) {
       
       stream.pipe(res);
       
+      // 清理流资源
+      const cleanup = () => {
+        if (!stream.destroyed) {
+          stream.destroy();
+          console.log(`[Video Stream] Stream destroyed for id=${wantId}`);
+        }
+      };
+      
       stream.on('error', (err) => {
         console.error('[Video Stream] Stream error:', err.message);
+        cleanup();
         if (!res.headersSent) {
           res.writeHead(500);
           res.end('Stream error');
         }
       });
+      
+      // 确保流在响应结束后被销毁
+      res.on('close', cleanup);
+      res.on('finish', cleanup);
+      stream.on('end', cleanup);
     } else {
       console.log(`[Video Stream] Full file request: ${fileSize} bytes`);
       
@@ -1834,16 +2063,33 @@ async function handleVideoStream(req, res, id) {
         'Cache-Control': 'public, max-age=3600'
       });
       
-      const stream = fs.createReadStream(videoPath);
+      // 优化：使用较小的 highWaterMark 减少内存占用
+      const stream = fs.createReadStream(videoPath, { 
+        highWaterMark: 256 * 1024 // 256KB chunks instead of 1MB
+      });
       stream.pipe(res);
+      
+      // 清理流资源
+      const cleanup = () => {
+        if (!stream.destroyed) {
+          stream.destroy();
+          console.log(`[Video Stream] Stream destroyed for id=${wantId}`);
+        }
+      };
       
       stream.on('error', (err) => {
         console.error('[Video Stream] Stream error:', err.message);
+        cleanup();
         if (!res.headersSent) {
           res.writeHead(500);
           res.end('Stream error');
         }
       });
+      
+      // 确保流在响应结束后被销毁
+      res.on('close', cleanup);
+      res.on('finish', cleanup);
+      stream.on('end', cleanup);
     }
   } catch (e) {
     console.error('[Video Stream Error]', e.message);
@@ -1980,10 +2226,69 @@ const server = http.createServer(async (req, res) => {
             }
           }
         }
-        console.log(`[Cache] Manually cleared ${deletedCount} workshop items`);
+        // 清理内存缓存
+        VIDEO_CACHE.clear();
+        console.log(`[Cache] Manually cleared ${deletedCount} workshop items and memory cache`);
+        
+        // 触发垃圾回收
+        if (global.gc) {
+          global.gc();
+          console.log('[Cache] Triggered garbage collection');
+        }
+        
         jsonRes(res, 200, { success: true, deletedCount });
       } catch (e) {
         console.error('[Cache] Clear failed:', e);
+        jsonRes(res, 500, { error: e.message });
+      }
+      return;
+    }
+    if (pn==='/api/memory/status' && req.method==='GET') {
+      try {
+        const memUsage = process.memoryUsage();
+        jsonRes(res, 200, {
+          heapUsed: memUsage.heapUsed,
+          heapTotal: memUsage.heapTotal,
+          rss: memUsage.rss,
+          external: memUsage.external,
+          heapUsedMB: (memUsage.heapUsed / 1024 / 1024).toFixed(2),
+          heapTotalMB: (memUsage.heapTotal / 1024 / 1024).toFixed(2),
+          rssMB: (memUsage.rss / 1024 / 1024).toFixed(2),
+          videoCacheSize: VIDEO_CACHE.size,
+          videoCacheLimit: MAX_VIDEO_CACHE_SIZE
+        });
+      } catch (e) {
+        jsonRes(res, 500, { error: e.message });
+      }
+      return;
+    }
+    if (pn==='/api/memory/gc' && req.method==='POST') {
+      try {
+        if (global.gc) {
+          const before = process.memoryUsage();
+          global.gc();
+          const after = process.memoryUsage();
+          const freed = (before.heapUsed - after.heapUsed) / 1024 / 1024;
+          console.log(`[Memory] Manual GC freed ${freed.toFixed(2)}MB`);
+          jsonRes(res, 200, { 
+            success: true, 
+            freedMB: freed.toFixed(2),
+            before: {
+              heapUsedMB: (before.heapUsed / 1024 / 1024).toFixed(2),
+              heapTotalMB: (before.heapTotal / 1024 / 1024).toFixed(2)
+            },
+            after: {
+              heapUsedMB: (after.heapUsed / 1024 / 1024).toFixed(2),
+              heapTotalMB: (after.heapTotal / 1024 / 1024).toFixed(2)
+            }
+          });
+        } else {
+          jsonRes(res, 400, { 
+            error: 'GC not available. Start with --expose-gc flag',
+            hint: 'node --expose-gc server.js'
+          });
+        }
+      } catch (e) {
         jsonRes(res, 500, { error: e.message });
       }
       return;
@@ -2023,6 +2328,33 @@ server.listen(PORT,'0.0.0.0',()=>{
   setTimeout(() => {
     cleanOldCacheFiles();
   }, 5000);
+  
+  // 内存监控和定期垃圾回收（每 10 分钟）
+  setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
+    const heapTotalMB = (memUsage.heapTotal / 1024 / 1024).toFixed(2);
+    const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
+    
+    console.log(`[Memory] Heap: ${heapUsedMB}MB / ${heapTotalMB}MB, RSS: ${rssMB}MB, Cache: ${VIDEO_CACHE.size} videos`);
+    
+    // 如果堆内存使用超过 500MB，触发垃圾回收
+    if (memUsage.heapUsed > 500 * 1024 * 1024) {
+      console.log('[Memory] High memory usage detected, triggering GC...');
+      if (global.gc) {
+        global.gc();
+        console.log('[Memory] GC completed');
+      } else {
+        console.log('[Memory] GC not available. Start with --expose-gc flag to enable manual GC');
+      }
+    }
+  }, 10 * 60 * 1000);
+  
+  // 启动时输出内存信息
+  setTimeout(() => {
+    const memUsage = process.memoryUsage();
+    console.log(`  💾 Memory : ${(memUsage.heapUsed / 1024 / 1024).toFixed(2)}MB / ${(memUsage.heapTotal / 1024 / 1024).toFixed(2)}MB\n`);
+  }, 1000);
 });
 server.on('error',err=>{
   if(err.code==='EADDRINUSE') console.error(`\n❌ 端口 ${PORT} 已占用\n`);

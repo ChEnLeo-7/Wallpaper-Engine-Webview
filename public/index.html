@@ -224,6 +224,33 @@
           </button>
         </div>
       </div>
+      <div class="settings-section">
+        <div class="settings-section-title">内存监控 / Memory Monitor</div>
+        <div class="settings-options">
+          <div class="memory-status" id="memoryStatus">
+            <div class="memory-item">
+              <span class="memory-label">堆内存使用 / Heap Used:</span>
+              <span class="memory-value" id="heapUsed">--</span>
+            </div>
+            <div class="memory-item">
+              <span class="memory-label">总堆内存 / Heap Total:</span>
+              <span class="memory-value" id="heapTotal">--</span>
+            </div>
+            <div class="memory-item">
+              <span class="memory-label">RSS 内存 / RSS:</span>
+              <span class="memory-value" id="rssMemory">--</span>
+            </div>
+            <div class="memory-item">
+              <span class="memory-label">视频缓存 / Video Cache:</span>
+              <span class="memory-value" id="videoCacheCount">--</span>
+            </div>
+          </div>
+          <div class="memory-actions">
+            <button class="settings-save-btn" onclick="refreshMemoryStatus()">刷新 / Refresh</button>
+            <button class="settings-save-btn" onclick="triggerGarbageCollection()">清理内存 / GC</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
