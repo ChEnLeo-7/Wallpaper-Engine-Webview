@@ -8,6 +8,12 @@
   <a href="./README.md">简体中文</a>
 </p>
 
+## 关于二改作者的话
+此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，可能稍有遗漏。注意，下面部分内容为 AI 编写
+
+### 以下是作者原话：
+注：根据用户使用猖獗性而定，如有必要后期只留视频下载选项 如非必要则保持现状。 【本项目仅应急娱乐使用 不要视作为破解的理由】
+
 ## 项目徽章
 
 [![version](https://img.shields.io/badge/version-4.3.0-3fb950?style=flat-square)](https://semver.org/)
@@ -29,15 +35,13 @@
 
 本项目是一个基于 Web 的 Steam 创意工坊下载工具，专为 Wallpaper Engine 设计。它通过网页界面提供壁纸搜索、在线播放和下载功能。
 
-**核心优势**：利用 **SteamCMD** 的匿名登录特性，无需登录个人 Steam 账号即可下载大部分公开的壁纸资源。
+**核心优势**：利用 **SteamCMD** 的匿名登录特性，无需登录个人 Steam 账号即可下载大部分公开的壁纸资源。（作者PS：实测匿名下载大部分好像都不行，最好登录Steam账号😅）
 
-## 核心特点
+## 二改特色
 
-- **免登录下载**：通过 SteamCMD 匿名模式获取资源，保护隐私
 - **Steam 账号登录**：支持网页登录 Steam 账号，下载需要权限的壁纸
-- **持久化登录**：登录一次，重启服务自动恢复，无需重复输入密码
-- **在线视频播放**：视频类壁纸可直接在浏览器中播放，无需下载
-- **智能解析**：自动抓取创意工坊页面，提取 FileID 和元数据
+- **在线视频播放**：视频类壁纸可直接在浏览器中播放，无需下载（会缓存在服务端本地）
+- **持久化登录**：登录一次，重启服务自动恢复，无需重复输入密码（这个似乎有问题）
 - **自动打包规则**：
   - **场景/程序/网页类壁纸**：下载后自动打包为 `.zip` 压缩包
   - **视频类壁纸**：直接提取原始视频文件（.mp4等），可直接播放
@@ -45,17 +49,7 @@
 
 ## 截图展示
 
-<img width="1573" height="1142" alt="主界面" src="https://github.com/user-attachments/assets/624f6abe-1fd6-4ffe-afb4-b93a40ead201" />
-</br>
-<img width="1573" height="1351" alt="详情页" src="https://github.com/user-attachments/assets/6903ac0e-3bcc-4f1e-9446-c3b2e0f65ca1" />
-</br></br>
-<img width="32%" height="1223" alt="筛选" src="https://github.com/user-attachments/assets/397b907a-b7fc-4b3c-b5da-0580b948e342" />
-<img width="32%" height="1223" alt="搜索" src="https://github.com/user-attachments/assets/a3fe9cce-d0d4-4559-8511-1c52d3a9759e" />
-<img width="32%" height="1224" alt="列表视图" src="https://github.com/user-attachments/assets/9f789a17-bbf1-4013-a72b-94036fe345fe" />
-</br></br>
-<img width="32%" height="1223" alt="深色主题" src="https://github.com/user-attachments/assets/2882fcd9-023f-4952-bf9b-18e624f79e3c" />
-<img width="32%" height="1223" alt="浅色主题" src="https://github.com/user-attachments/assets/36db3d9b-1074-4b9a-bc73-d405e21d5964" />
-<img width="32%" height="1223" alt="移动端" src="https://github.com/user-attachments/assets/635a22c1-258a-469c-95fb-0cf00185892a" />
+
 
 ## 技术架构
 
@@ -73,30 +67,117 @@
 
 ## 快速开始
 
-### 本地运行
+`PS`：**第一次使用需要在线下载SteamCMD，你需要点击网页右上角用户图标，输入账号密码触发下载**
+
+### Windows
 
 1. **下载**本项目代码
 2. **启动服务**：
    ```bash
    node server.js
    ```
-3. **访问网页**：在浏览器打开 `http://localhost:3090`
+3. **访问网页**：在浏览器打开 `http://localhost:3090`  
 
 ### Docker 部署
 
-```yaml
-version: '3'
+1. 下载完整的项目代码，在你部署的路径上新建文件夹 `node_server_data`  
+2. 将项目全部完整文件放到 `node_server_data` 文件夹下
+3. 然后在 `node_server_data` 的上一个文件夹下新增文件 `dockerfile` 、 `docker-compose.yml` ，分别填写下面的内容进去  
+
+**Dockerfile**
+
+```dockerfile
+# 基础镜像
+FROM node:18-slim
+
+# 安装 SteamCMD 依赖
+RUN apt-get update && \
+    dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        wget \
+        curl \
+        ca-certificates \
+        lib32gcc-s1 \
+        lib32stdc++6 \
+        libc6-i386 \
+        libcurl4-gnutls-dev:i386 \
+        lib32z1 \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+# 安装 SteamCMD
+RUN mkdir -p /steamcmd && \
+    cd /steamcmd && \
+    wget -q https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz && \
+    tar -xvzf steamcmd_linux.tar.gz && \
+    rm steamcmd_linux.tar.gz && \
+    chmod +x steamcmd.sh
+
+# 设置环境变量
+ENV STEAMCMD_DIR=/app
+ENV PATH="${STEAMCMD_DIR}:${PATH}"
+
+# 设置工作目录（可被 docker-compose 覆盖）
+WORKDIR /app
+
+# 不复制任何 Node 代码，完全通过挂载方式运行
+# 只安装全局工具（可选）
+RUN npm install -g nodemon pm2 2>/dev/null || true
+
+# 暴露端口（可被 docker-compose 覆盖）
+EXPOSE 3090
+
+# 默认命令，可被 docker-compose 覆盖
+CMD ["node", "server.js"]
+```
+**docker-compose.yml**
+```docker-compose
+version: '3.8'
+
 services:
-  wallhub:
-    image: wallhub:latest
-    volumes:
-      - ./steam_data:/root/Steam      # 持久化 Steam 登录数据
-      - ./downloads:/app/downloads    # 持久化下载文件
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: Wallpaper-Webview
+    # 重启策略
+    restart: always
+    # 端口映射
     ports:
       - "3090:3090"
-    environment:
-      - STEAM_CONFIG_DIR=/root/Steam
+    # 环境变量
+    #environment:
+      #- NODE_ENV=production
+      # 可以根据需要添加其他环境变量
+      # - STEAM_USERNAME=your_username
+      # - STEAM_PASSWORD=your_password
+    volumes:
+      # 挂载项目文件的路径
+      - ./node_server_data:/app
+      # 挂载 SteamCMD 数据目录（如果需要持久化 Steam 数据）
+      - ./steamcmd_data:/root/Steam
+    # 工作目录
+    working_dir: /app
+    # 启动命令（如果需要覆盖 Dockerfile 中的 CMD）
+    command: node server.js
+    # 或者使用 nodemon 进行开发
+    # command: nodemon server.js
+    # 网络模式
+    networks:
+      - app-network
+
+# 自定义网络
+networks:
+  app-network:
+    driver: bridge
 ```
+
+4. 运行构建命令：
+    ```
+    docker-compose up -d
+    ```
+   或者你是图形化 NAS 界面则手动在 web 界面选中 dockerfile 和 docker-compose 所在的路径  
 
 **重要提示**：必须挂载 `/root/Steam` 目录才能实现登录状态持久化！
 
@@ -106,11 +187,11 @@ services:
 
 #### 使用方法
 1. 点击页面右上角的用户图标按钮
-2. 输入 Steam 用户名、密码和 Steam Guard 验证码（如需要）
+2. 输入 Steam 用户名、密码和 Steam Guard 验证码（如果Steam开启了手机验证则查看手机版Steam放行登录请求）
 3. 点击"登录"按钮
 4. 登录成功后，按钮变为绿色，显示已登录状态
 
-#### 持久化登录
+#### 持久化登录（功能存疑）
 - 登录成功后，凭据自动保存到 `/root/Steam` 目录
 - 重启服务后自动恢复登录状态，无需重新输入密码
 - 下载和视频播放时复用已登录会话，不会触发重复登录
@@ -126,7 +207,7 @@ services:
 1. 在筛选器中选择"视频"类型
 2. 点击视频壁纸卡片打开详情页
 3. 点击绿色的"在线播放视频"按钮
-4. 视频播放器自动打开并开始播放
+4. 视频播放器自动打开并开始播放（第一次播放可能会有点久，详细可以看服务端后台日志）
 
 #### 技术特性
 - 支持 HTTP Range 请求，可拖动进度条
@@ -144,7 +225,7 @@ services:
 #### 手动清理缓存
 1. 打开设置面板
 2. 点击"立即清除已缓存的创意工坊项目"按钮
-3. 确认后清除所有缓存的视频文件
+3. 确认后清除所有缓存的视频文件（清除`/root/Steam/steamapps/431960/`目录下的所有创意工坊文件缓存）
 
 ## 高级配置
 
@@ -218,7 +299,7 @@ services:
 **解决方案**：
 - 在设置中调整缓存天数
 - 使用"立即清除缓存"功能
-- 手动删除 `downloads/` 目录下的文件
+- 手动删除 `/steamapps/431960/` 目录下的创意工坊缓存文件
 
 ## 更新日志
 
@@ -244,9 +325,6 @@ services:
 - 壁纸浏览和搜索
 - 多语言支持
 
-## 星标历史
-
-[![Star History Chart](https://api.star-history.com/svg?repos=0ran/wallpaper-engine-download-web&type=Date)](https://star-history.com/#0ran/wallpaper-engine-download-web&Date)
 
 ## 安全性说明
 
@@ -258,17 +336,3 @@ services:
 ## 开发声明
 
 本项目全程依托人工智能辅助完成构建。发布者未审阅、未编写任何一行代码内容；若与其他项目存在代码雷同，均属巧合。仅供学习交流使用。
-
-## 许可证
-
-本项目遵循原项目的许可证。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
----
-
-**当前版本**：v4.3.0  
-**更新时间**：2024  
-**开发者**：AI 辅助开发
