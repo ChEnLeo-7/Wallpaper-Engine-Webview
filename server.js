@@ -21,7 +21,95 @@ const { URL } = require('url');
 const PORT   = process.env.PORT ? parseInt(process.env.PORT) : 3090;
 const PUBLIC = path.join(__dirname, 'public');
 
+const DOWNLOAD_DIR = path.join(__dirname, 'downloads');
 const PERSONA_CACHE = new Map();
+const STEAM_CREDENTIALS = { username: '', password: '', steamGuardCode: '', isPersistent: false };
+
+// 根据操作系统设置 Steam 配置目录
+// Windows: 项目根目录/steamcmd
+// Linux: /root/Steam (Docker 环境)
+const getDefaultSteamConfigDir = () => {
+  if (process.platform === 'win32') {
+    return path.join(__dirname, 'steamcmd');
+  }
+  return '/root/Steam';
+};
+
+const STEAM_CONFIG_DIR = process.env.STEAM_CONFIG_DIR || getDefaultSteamConfigDir();
+const WORKSHOP_CACHE_DIR = path.join(STEAM_CONFIG_DIR, 'steamapps', 'workshop', 'content', '431960');
+const CACHE_SETTINGS_FILE = path.join(__dirname, 'cache-settings.json');
+let VIDEO_CACHE_SETTINGS = { cacheDays: 7 }; // Default 7 days
+
+// 确保 Steam 配置目录存在
+function ensureSteamConfigDir() {
+  try {
+    if (!fs.existsSync(STEAM_CONFIG_DIR)) {
+      fs.mkdirSync(STEAM_CONFIG_DIR, { recursive: true });
+      console.log(`[Steam] Created config directory: ${STEAM_CONFIG_DIR}`);
+    }
+  } catch (e) {
+    console.warn('[Steam] Failed to create config directory:', e.message);
+  }
+}
+
+// Load cache settings from file
+function loadCacheSettings() {
+  try {
+    if (fs.existsSync(CACHE_SETTINGS_FILE)) {
+      const data = fs.readFileSync(CACHE_SETTINGS_FILE, 'utf8');
+      VIDEO_CACHE_SETTINGS = JSON.parse(data);
+      console.log(`[Cache] Loaded settings: ${VIDEO_CACHE_SETTINGS.cacheDays} days`);
+    }
+  } catch (e) {
+    console.warn('[Cache] Failed to load settings:', e.message);
+  }
+}
+
+// Save cache settings to file
+function saveCacheSettings() {
+  try {
+    fs.writeFileSync(CACHE_SETTINGS_FILE, JSON.stringify(VIDEO_CACHE_SETTINGS, null, 2));
+    console.log(`[Cache] Saved settings: ${VIDEO_CACHE_SETTINGS.cacheDays} days`);
+  } catch (e) {
+    console.warn('[Cache] Failed to save settings:', e.message);
+  }
+}
+
+// Clean old cache files from workshop directory
+function cleanOldCacheFiles() {
+  try {
+    if (!fs.existsSync(WORKSHOP_CACHE_DIR)) {
+      console.log('[Cache] Workshop cache directory does not exist:', WORKSHOP_CACHE_DIR);
+      return;
+    }
+    
+    const now = Date.now();
+    const maxAge = VIDEO_CACHE_SETTINGS.cacheDays * 24 * 60 * 60 * 1000;
+    let deletedCount = 0;
+    
+    const items = fs.readdirSync(WORKSHOP_CACHE_DIR);
+    for (const item of items) {
+      const itemPath = path.join(WORKSHOP_CACHE_DIR, item);
+      try {
+        const stats = fs.statSync(itemPath);
+        if (stats.isDirectory() && (now - stats.mtimeMs) > maxAge) {
+          fs.rmSync(itemPath, { recursive: true, force: true });
+          deletedCount++;
+          console.log(`[Cache] Deleted old workshop item: ${item}`);
+        }
+      } catch (e) {
+        console.warn(`[Cache] Failed to check/delete ${item}:`, e.message);
+      }
+    }
+    
+    if (deletedCount > 0) {
+      console.log(`[Cache] Cleaned ${deletedCount} old workshop items`);
+    }
+  } catch (e) {
+    console.warn('[Cache] Failed to clean old files:', e.message);
+  }
+}
+
 const STEAM_PREF_COOKIE = [
   'birthtime=946684801',
   'lastagecheckage=1-January-2000',
@@ -37,6 +125,71 @@ const STEAM_PREF_COOKIE = [
   `Steam_Language=${process.env.STEAM_LANG || 'schinese'}`,
   'timezoneOffset=28800,0',
 ].filter(Boolean).join('; ');
+
+// ─── Steam 持久化登录检测 ────────────────────────────────────────
+function checkSteamPersistentLogin() {
+  try {
+    // 检查 Steam 配置目录是否存在
+    if (!fs.existsSync(STEAM_CONFIG_DIR)) {
+      console.log('[Steam Persistent] Steam config directory not found:', STEAM_CONFIG_DIR);
+      return null;
+    }
+
+    // 检查关键文件是否存在
+    const configVdf = path.join(STEAM_CONFIG_DIR, 'config', 'config.vdf');
+    const loginUsersVdf = path.join(STEAM_CONFIG_DIR, 'config', 'loginusers.vdf');
+    
+    if (!fs.existsSync(configVdf) && !fs.existsSync(loginUsersVdf)) {
+      console.log('[Steam Persistent] No Steam config files found');
+      return null;
+    }
+
+    // 尝试从 loginusers.vdf 读取最后登录的用户
+    if (fs.existsSync(loginUsersVdf)) {
+      try {
+        const content = fs.readFileSync(loginUsersVdf, 'utf8');
+        // 查找 "AccountName" 字段
+        const accountMatch = content.match(/"AccountName"\s+"([^"]+)"/i);
+        if (accountMatch && accountMatch[1]) {
+          const username = accountMatch[1].trim();
+          console.log(`[Steam Persistent] Found persistent login for user: ${username}`);
+          return {
+            username: username,
+            isPersistent: true
+          };
+        }
+      } catch (e) {
+        console.warn('[Steam Persistent] Failed to read loginusers.vdf:', e.message);
+      }
+    }
+
+    // 检查 steamapps 目录是否存在（表示 Steam 已初始化）
+    const steamappsDir = path.join(STEAM_CONFIG_DIR, 'steamapps');
+    if (fs.existsSync(steamappsDir)) {
+      console.log('[Steam Persistent] Steam directory initialized but no user found');
+      return { isPersistent: true, username: '' };
+    }
+
+    return null;
+  } catch (e) {
+    console.warn('[Steam Persistent] Error checking persistent login:', e.message);
+    return null;
+  }
+}
+
+// 初始化时检测持久化登录
+function initializeSteamCredentials() {
+  const persistent = checkSteamPersistentLogin();
+  if (persistent && persistent.username) {
+    STEAM_CREDENTIALS.username = persistent.username;
+    STEAM_CREDENTIALS.isPersistent = true;
+    STEAM_CREDENTIALS.password = ''; // 持久化登录不需要密码
+    STEAM_CREDENTIALS.steamGuardCode = '';
+    console.log(`[Steam Init] Loaded persistent login: ${persistent.username}`);
+  } else {
+    console.log('[Steam Init] No persistent login found, using anonymous or env credentials');
+  }
+}
 
 // ─── CORS + helpers ────────────────────────────────────────────────
 function cors(res) {
@@ -121,12 +274,49 @@ function readWindowsSystemProxy(protocol) {
     return null;
   }
 }
+
+function readLinuxSystemProxy(protocol) {
+  if (process.platform !== 'linux') return null;
+  try {
+    const isHttps = protocol === 'https:';
+    const proxyEnv = isHttps 
+      ? (process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy)
+      : (process.env.HTTP_PROXY || process.env.http_proxy);
+    
+    console.log('readLinuxSystemProxy', proxyEnv);
+    if (proxyEnv) {
+      return parseProxyUrl(proxyEnv);
+    }
+
+    const gsettings = execFileSync('which', ['gsettings'], { encoding: 'utf8', stdio: 'pipe' }).trim();
+    if (gsettings) {
+      try {
+        const mode = execFileSync('gsettings', ['get', 'org.gnome.system.proxy', 'mode'], { encoding: 'utf8' }).trim();
+        if (mode.includes('manual')) {
+          const httpHost = execFileSync('gsettings', ['get', 'org.gnome.system.proxy.http', 'host'], { encoding: 'utf8' }).trim().replace(/['"]/g, '');
+          const httpPort = parseInt(execFileSync('gsettings', ['get', 'org.gnome.system.proxy.http', 'port'], { encoding: 'utf8' }).trim()) || 8080;
+          
+          if (httpHost && httpPort) {
+            const proxyUrl = `http://${httpHost}:${httpPort}`;
+            return parseProxyUrl(proxyUrl);
+          }
+        }
+      } catch (e) {
+        console.log(e);
+      }
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}
 function resolveProxyForProtocol(protocol) {
   const isHttps = protocol === 'https:';
   const envRaw = isHttps
     ? (process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY || process.env.all_proxy || '')
     : (process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY || process.env.all_proxy || '');
-  return parseProxyUrl(envRaw) || readWindowsSystemProxy(protocol);
+  return parseProxyUrl(envRaw) || readWindowsSystemProxy(protocol) || readLinuxSystemProxy(protocol);
 }
 function proxyAuth(proxy) {
   if (!proxy || !proxy.username) return '';
@@ -191,6 +381,7 @@ function buildUrlFromOpts(opts) {
   const port = opts.port ? `:${opts.port}` : '';
   return `${protocol}//${opts.hostname}${port}${opts.path || '/'}`;
 }
+
 function doRequestByCurl(opts, body, timeout, proxy) {
   return new Promise((resolve, reject) => {
     const url = buildUrlFromOpts(opts);
@@ -214,7 +405,9 @@ function doRequestByCurl(opts, body, timeout, proxy) {
       const payload = Buffer.isBuffer(body) ? body.toString('utf8') : String(body);
       args.push('--data-binary', payload);
     }
-    const cp = spawn('curl.exe', args, { windowsHide: true, env: Object.assign({}, process.env) });
+
+    const curlCommand = process.platform === 'win32' ? 'curl.exe' : 'curl';
+    const cp = spawn(curlCommand, args, { windowsHide: true, env: Object.assign({}, process.env) });
     const chunks = [];
     let err = '';
     cp.stdout.on('data', d => chunks.push(Buffer.from(d)));
@@ -269,7 +462,7 @@ function doRequest(opts, body, redirects, proxyIndex) {
   const proxies = getProxyCandidates(protocol, opts.hostname);
   const proxy = proxies[Math.min(currentProxyIndex, proxies.length - 1)];
   const attemptTimeout = proxy ? Math.min(timeout, 12000) : timeout;
-  if (process.platform === 'win32' && process.env.WALLHUB_DISABLE_CURL_PROXY !== '1') {
+  if (process.env.WALLHUB_DISABLE_CURL_PROXY !== '1') {
     return doRequestByCurlCascade(opts, body, attemptTimeout, proxies, currentProxyIndex);
   }
   return new Promise((resolve, reject) => {
@@ -279,6 +472,7 @@ function doRequest(opts, body, redirects, proxyIndex) {
       }
       reject(err);
     };
+
     const onResponse = (rs) => {
       if (rs.statusCode >= 300 && rs.statusCode < 400 && rs.headers.location) {
         rs.resume();
@@ -312,6 +506,7 @@ function doRequest(opts, body, redirects, proxyIndex) {
       if (body) req.write(body);
       req.end();
     };
+    
     if (!proxy) {
       const mod = protocol === 'http:' ? http : https;
       const req = mod.request({
@@ -342,6 +537,7 @@ function doRequest(opts, body, redirects, proxyIndex) {
       writeEnd(req);
       return;
     }
+    
     const connectHeaders = {};
     if (auth) connectHeaders['Proxy-Authorization'] = auth;
     const connectReq = http.request({
@@ -352,6 +548,7 @@ function doRequest(opts, body, redirects, proxyIndex) {
       headers: connectHeaders,
       timeout: attemptTimeout,
     });
+    
     connectReq.on('connect', (res, socket) => {
       if (res.statusCode !== 200) {
         socket.destroy();
@@ -941,15 +1138,13 @@ function mimeFromExt(ext) {
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
-function removePathSafe(target) {
-  if (!target) return;
-  try {
-    fs.rmSync(target, { recursive: true, force: true });
-  } catch {}
-}
-function runProcess(bin, args, timeoutMs) {
+function runProcess(bin, args, timeoutMs, options = {}) {
   return new Promise((resolve, reject) => {
-    const cp = spawn(bin, args, { windowsHide: true, env: Object.assign({}, process.env) });
+    const spawnOptions = Object.assign({
+      windowsHide: true,
+      env: Object.assign({}, process.env)
+    }, options);
+    const cp = spawn(bin, args, spawnOptions);
     let out = '';
     let err = '';
     const timer = setTimeout(() => {
@@ -977,6 +1172,16 @@ async function resolveSteamCmdPath() {
     'C:\\Program Files (x86)\\SteamCMD\\steamcmd.exe',
     'C:\\Program Files\\SteamCMD\\steamcmd.exe',
   ].filter(Boolean);
+
+  if (process.platform !== 'win32') {
+    candidates.unshift(
+      path.join(__dirname, 'steamcmd', 'steamcmd.sh'),
+      '/usr/bin/steamcmd',
+      '/usr/games/steamcmd',
+      '/usr/local/bin/steamcmd.sh',
+      '/opt/steamcmd/steamcmd.sh'
+    );
+  }
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
@@ -1035,41 +1240,18 @@ function extractSteamCmdFailure(steamcmdPath, appId, publishedFileId) {
     if (line.includes(`Download item ${item} requested by app`)) { from = i; break; }
   }
   if (from < 0) return '';
-  const window = rows.slice(from, Math.min(rows.length, from + 120));
-  let lastRelated = '';
+  const window = rows.slice(from, Math.min(rows.length, from + 40));
   for (const line of window) {
-    const related = line.includes(`[AppID ${app}]`) || line.includes(`item ${item}`) || line.includes(`item ${item}.`);
-    if (!related) continue;
-    lastRelated = String(line || '').trim();
-    const low = lastRelated.toLowerCase();
-    if (low.includes('result : no connection') || low.includes('failed downloading') || low.includes('no connection') || low.includes('connection was reset') || low.includes('connection reset by peer')) {
+    if (!line.includes(`[AppID ${app}]`)) continue;
+    if (line.includes('result : No Connection') || line.includes('Failed downloading') || line.includes('No connection')) {
       return 'SteamCDN 网络连接失败（No Connection）';
     }
-    if (low.includes('result : access denied') || low.includes('access denied')) {
+    if (line.includes('result : Access Denied')) {
       return 'Steam 返回 Access Denied（权限不足或需要登录账号）';
     }
-    if (low.includes('result : timeout') || low.includes('timed out')) {
+    if (line.includes('result : Timeout')) {
       return 'Steam 下载超时（Timeout）';
     }
-    if (low.includes('missing decryption key')) {
-      return 'Steam 返回 Missing decryption key（该壁纸受Steam官方DRM版权保护。解决办法：请确保你后台运行了Steam客户端，并且登录了拥有《壁纸引擎》的账号。SteamCMD会自动借用你本地的登录状态来绕过此限制）';
-    }
-    if (low.includes('failed to initialize depot') || low.includes('failed to init depot') || low.includes('depot') && low.includes('manifest')) {
-      return 'Steam Depot 初始化失败（多为代理链路不稳定或节点不支持）';
-    }
-    if (low.includes('login failure') || low.includes('invalid password') || low.includes('two-factor') || low.includes('steam guard')) {
-      return 'Steam 登录失败（账号凭据或 Steam Guard 校验问题）';
-    }
-    if (low.includes('rate limit') || low.includes('too many') && low.includes('login')) {
-      return 'Steam 登录请求触发频率限制（Rate Limit）';
-    }
-    if (low.includes('requires ownership') || low.includes('not subscribed') || low.includes('insufficient privilege')) {
-      return '该工坊项目受权限限制，匿名账号无法下载';
-    }
-  }
-  if (lastRelated) {
-    const brief = lastRelated.replace(/\s+/g, ' ').slice(0, 160);
-    return `SteamCMD 日志提示: ${brief}`;
   }
   return '';
 }
@@ -1091,21 +1273,49 @@ function pickVideoFile(itemDir) {
 async function zipDir(dirPath, zipPath) {
   ensureDir(path.dirname(zipPath));
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-  const cmd = `Compress-Archive -Path '${psQuote(path.join(dirPath, '*'))}' -DestinationPath '${psQuote(zipPath)}' -Force`;
-  await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], 180000);
+  
+  if (process.platform === 'win32') {
+    const cmd = `Compress-Archive -Path '${psQuote(path.join(dirPath, '*'))}' -DestinationPath '${psQuote(zipPath)}' -Force`;
+    await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], 180000);
+  } else {
+    const zipArgs = ['-r', path.basename(zipPath), '.'];
+    await runProcess('zip', zipArgs, 180000, { cwd: dirPath });
+  }
 }
 async function ensureSteamCmdReady() {
   const found = await resolveSteamCmdPath();
   if (found) return found;
   const base = path.join(__dirname, 'steamcmd');
-  const zipFile = path.join(base, 'steamcmd.zip');
-  const exeFile = path.join(base, 'steamcmd.exe');
   ensureDir(base);
-  const cmd = `$ProgressPreference='SilentlyContinue';Invoke-WebRequest -UseBasicParsing -Uri 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip' -OutFile '${psQuote(zipFile)}';Expand-Archive -Path '${psQuote(zipFile)}' -DestinationPath '${psQuote(base)}' -Force`;
-  await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], 240000);
-  if (!fs.existsSync(exeFile)) throw new Error('SteamCMD 自动安装后仍未找到 steamcmd.exe');
-  try { fs.unlinkSync(zipFile); } catch {}
-  return exeFile;
+  
+  if (process.platform === 'win32') {
+    const zipFile = path.join(base, 'steamcmd.zip');
+    const exeFile = path.join(base, 'steamcmd.exe');
+    const cmd = `$ProgressPreference='SilentlyContinue';Invoke-WebRequest -UseBasicParsing -Uri 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip' -OutFile '${psQuote(zipFile)}';Expand-Archive -Path '${psQuote(zipFile)}' -DestinationPath '${psQuote(base)}' -Force`;
+    await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], 240000);
+    if (!fs.existsSync(exeFile)) throw new Error('SteamCMD 自动安装后仍未找到 steamcmd.exe');
+    try { fs.unlinkSync(zipFile); } catch {}
+    return exeFile;
+  } else {
+    try {
+      if (process.platform === 'linux') {
+        const steamcmdSh = path.join(base, 'steamcmd.sh');
+        if (!fs.existsSync(steamcmdSh)) {
+          const downloadCmd = `curl -sSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C '${psQuote(base)}'`;
+          await runProcess('sh', ['-c', downloadCmd], 240000);
+        }
+        
+        if (fs.existsSync(steamcmdSh)) {
+          await runProcess('chmod', ['+x', steamcmdSh], 5000);
+          return steamcmdSh;
+        }
+      }
+    } catch (e) {
+      console.warn('Linux SteamCMD 自动安装失败:', e.message);
+    }
+
+    throw new Error('未找到 SteamCMD。请在 Linux 上手动安装 SteamCMD:\n1. sudo apt install steamcmd (Ubuntu/Debian)\n2. 或从 https://developer.valvesoftware.com/wiki/SteamCMD#Linux 下载并解压到 steamcmd/ 目录');
+  }
 }
 function resolveLocalAccount(appId) {
   const candidates = [
@@ -1132,25 +1342,61 @@ function resolveLocalAccount(appId) {
 }
 async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
   const steamcmd = await ensureSteamCmdReady();
+  const webUser = STEAM_CREDENTIALS.username;
+  const webPass = STEAM_CREDENTIALS.password;
+  const webGuard = STEAM_CREDENTIALS.steamGuardCode;
+  const isPersistent = STEAM_CREDENTIALS.isPersistent;
   const envUser = String(process.env.STEAM_USERNAME || '').trim();
   const envPass = String(process.env.STEAM_PASSWORD || '').trim();
-  const localAcc = (!envUser || !envPass) ? resolveLocalAccount(appId) : null;
-  const user = envUser || (localAcc && localAcc.user) || '';
-  const pass = envPass || (localAcc && localAcc.pass) || '';
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wallhub-steamcmd-'));
+  const localAcc = (!webUser && !webPass && !envUser && !envPass) ? resolveLocalAccount(appId) : null;
+  const user = webUser || envUser || (localAcc && localAcc.user) || '';
+  const pass = webPass || envPass || (localAcc && localAcc.pass) || '';
+  const guard = webGuard || '';
+  
+  // 如果有持久化登录，使用 STEAM_CONFIG_DIR 作为安装目录
+  // 这样可以复用已登录的会话，避免重复登录
+  // 匿名下载使用临时目录
+  const useSharedDir = isPersistent && user;
+  const tempRoot = useSharedDir 
+    ? STEAM_CONFIG_DIR 
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'wallhub-steamcmd-'));
+  
   let itemDir = path.join(tempRoot, 'steamapps', 'workshop', 'content', String(appId), String(publishedFileId));
   const attempts = [];
-  if (user && pass) attempts.push({ name: 'account', loginArgs: ['+login', user, pass] });
+  
+  // 如果是持久化登录，只使用用户名（不需要密码）
+  if (user && isPersistent) {
+    console.log(`[SteamCMD] Using persistent login: ${user} (shared dir: ${useSharedDir})`);
+    attempts.push({ name: 'persistent', loginArgs: ['+login', user] });
+  } else if (user && pass) {
+    console.log(`[SteamCMD] Using account login: ${user}`);
+    attempts.push({ name: 'account', loginArgs: guard ? ['+login', user, pass, guard] : ['+login', user, pass] });
+  }
+  
   attempts.push({ name: 'anonymous', loginArgs: ['+login', 'anonymous'] });
+  
   let lastErr = '';
   const variants = [
     { name: 'normal', itemArgs: ['+workshop_download_item', String(appId), String(publishedFileId)] },
     { name: 'validate', itemArgs: ['+workshop_download_item', String(appId), String(publishedFileId), 'validate'] },
   ];
+
+  let steamcmdCommand, steamcmdArgsPrefix;
+  if (process.platform === 'win32') {
+    steamcmdCommand = steamcmd;
+    steamcmdArgsPrefix = [];
+  } else {
+    steamcmdCommand = '/bin/bash';
+    steamcmdArgsPrefix = [steamcmd];
+  }
+  
   for (const at of attempts) {
     for (const variant of variants) {
       try {
+        console.log(`[SteamCMD] Trying ${at.name}/${variant.name} for item ${publishedFileId}...`);
+        
         const args = [
+          ...steamcmdArgsPrefix,
           '+@ShutdownOnFailedCommand', '1',
           '+@NoPromptForPassword', '1',
           '+force_install_dir', tempRoot,
@@ -1158,52 +1404,89 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
           ...variant.itemArgs,
           '+quit',
         ];
-        await runProcess(steamcmd, args, 300000);
+        
+        await runProcess(steamcmdCommand, args, 300000);
+        
         const discovered = findWorkshopItemDir(tempRoot, appId, publishedFileId);
         if (discovered && fs.existsSync(discovered)) {
           const files = fs.readdirSync(discovered);
           if (files.length) {
             itemDir = discovered;
+            console.log(`[SteamCMD] Success with ${at.name}/${variant.name}, found ${files.length} files`);
             break;
           }
         }
         const reason = extractSteamCmdFailure(steamcmd, appId, publishedFileId);
         lastErr = `${at.name}/${variant.name} 未产出文件${reason ? `（${reason}）` : ''}`;
+        console.warn(`[SteamCMD] ${lastErr}`);
       } catch (e) {
         const reason = extractSteamCmdFailure(steamcmd, appId, publishedFileId);
         lastErr = `${at.name}/${variant.name} 失败: ${e.message}${reason ? `（${reason}）` : ''}`;
+        console.warn(`[SteamCMD] ${lastErr}`);
       }
       if (fs.existsSync(itemDir) && fs.readdirSync(itemDir).length) break;
     }
     if (fs.existsSync(itemDir) && fs.readdirSync(itemDir).length) break;
   }
-  if (!fs.existsSync(itemDir)) throw new Error(lastErr || 'SteamCMD 执行完成但未产出工坊文件目录');
-  if (!fs.readdirSync(itemDir).length) {
-    throw new Error(`匿名下载失败（${lastErr}）`);
+  
+  if (!fs.existsSync(itemDir)) {
+    // 只清理临时目录，不清理共享目录
+    if (!useSharedDir) {
+      try {
+        if (fs.existsSync(tempRoot)) {
+          fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+      } catch (e) {
+        console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
+      }
+    }
+    throw new Error(lastErr || 'SteamCMD 执行完成但未产出工坊文件目录');
   }
+  
+  if (!fs.readdirSync(itemDir).length) {
+    // 清理临时目录
+    if (!useSharedDir) {
+      try {
+        if (fs.existsSync(tempRoot)) {
+          fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+      } catch (e) {
+        console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
+      }
+    }
+    throw new Error(user && pass
+      ? `SteamCMD 未下载到文件（${lastErr}）`
+      : `匿名下载失败（${lastErr}），请尝试登录 Steam 账号后重试`);
+  }
+  
   const wantVideoOnly = !!(options && options.videoOnly);
   if (wantVideoOnly) {
     const videoPath = pickVideoFile(itemDir);
     if (videoPath) {
       const videoExt = extFromPath(videoPath, '.mp4');
       const videoName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}${videoExt}`;
-      return {
-        kind: 'file',
-        filePath: videoPath,
-        fileName: videoName,
-        cleanup: () => removePathSafe(tempRoot),
-      };
+      console.log(`[SteamCMD] Found video file: ${videoPath}`);
+      return { kind: 'file', filePath: videoPath, fileName: videoName, tempRoot, useSharedDir };
     }
   }
   const zipName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}.zip`;
-  const zipPath = path.join(tempRoot, zipName);
+  const zipPath = path.join(DOWNLOAD_DIR, zipName);
   await zipDir(itemDir, zipPath);
-  return {
-    kind: 'zip',
-    zipPath,
-    zipName,
-    cleanup: () => removePathSafe(tempRoot),
-  };
+  
+  console.log(`[SteamCMD] Created zip: ${zipPath}`);
+  
+  // 清理临时目录
+  if (!useSharedDir) {
+    try {
+      if (fs.existsSync(tempRoot)) {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
+    }
+  }
+  
+  return { kind: 'zip', zipPath, zipName };
 }
 async function handleDownload(res, id, title) {
   const wantId = parseInt(id);
@@ -1222,12 +1505,6 @@ async function handleDownload(res, id, title) {
   if (!sourceUrl) {
     try {
       const downloaded = await downloadViaSteamCmd(wantId, appId, title || d.title, { videoOnly: isVideo });
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        try { downloaded.cleanup && downloaded.cleanup(); } catch {}
-      };
       if (downloaded.kind === 'file') {
         const st = fs.statSync(downloaded.filePath);
         const ext = extFromPath(downloaded.filePath, '.mp4');
@@ -1237,11 +1514,7 @@ async function handleDownload(res, id, title) {
           'Content-Disposition': `attachment; filename="${encodeURIComponent(downloaded.fileName)}"; filename*=UTF-8''${encodeURIComponent(downloaded.fileName)}`,
           'Cache-Control': 'no-store',
         });
-        const rs = fs.createReadStream(downloaded.filePath);
-        rs.on('error', () => cleanup());
-        res.on('close', cleanup);
-        res.on('finish', cleanup);
-        rs.pipe(res);
+        fs.createReadStream(downloaded.filePath).pipe(res);
       } else {
         const st = fs.statSync(downloaded.zipPath);
         res.writeHead(200, {
@@ -1250,11 +1523,7 @@ async function handleDownload(res, id, title) {
           'Content-Disposition': `attachment; filename="${encodeURIComponent(downloaded.zipName)}"; filename*=UTF-8''${encodeURIComponent(downloaded.zipName)}`,
           'Cache-Control': 'no-store',
         });
-        const rs = fs.createReadStream(downloaded.zipPath);
-        rs.on('error', () => cleanup());
-        res.on('close', cleanup);
-        res.on('finish', cleanup);
-        rs.pipe(res);
+        fs.createReadStream(downloaded.zipPath).pipe(res);
       }
       return;
     } catch (e) {
@@ -1277,6 +1546,309 @@ async function handleDownload(res, id, title) {
     'Cache-Control': 'no-store',
   });
   res.end(bin);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Steam Login/Logout/Status APIs
+// ─────────────────────────────────────────────────────────────────
+async function handleSteamLogin(req, res) {
+  let payload;
+  try { payload = JSON.parse(await readBody(req)); }
+  catch { return jsonRes(res, 400, { error: 'Bad JSON' }); }
+
+  const username = String(payload.username || '').trim();
+  const password = String(payload.password || '').trim();
+  const steamGuardCode = String(payload.steamGuardCode || '').trim();
+  const isRetry = payload.isRetry || false;
+
+  if (!username || !password) {
+    return jsonRes(res, 400, { error: '用户名和密码不能为空' });
+  }
+
+  console.log(`[Steam Login] Attempting login for user: ${username}, SteamGuard: ${steamGuardCode ? 'Yes' : 'No'}, Retry: ${isRetry}`);
+
+  // 如果是重试且有验证码，直接保存凭据
+  if (isRetry && steamGuardCode) {
+    STEAM_CREDENTIALS.username = username;
+    STEAM_CREDENTIALS.password = password;
+    STEAM_CREDENTIALS.steamGuardCode = steamGuardCode;
+    STEAM_CREDENTIALS.isPersistent = false; // Web登录不是持久化的
+    console.log(`[Steam Login] Credentials saved with Steam Guard code`);
+    return jsonRes(res, 200, { 
+      success: true, 
+      message: '登录凭据已保存（含 Steam Guard）',
+      username: username,
+      hasSteamGuard: true
+    });
+  }
+
+  // 验证 SteamCMD 登录
+  try {
+    const steamcmd = await ensureSteamCmdReady();
+    
+    // 使用 STEAM_CONFIG_DIR 作为安装目录，这样登录信息会保存到该目录
+    const installDir = STEAM_CONFIG_DIR;
+    
+    // 确保目录存在
+    if (!fs.existsSync(installDir)) {
+      fs.mkdirSync(installDir, { recursive: true });
+    }
+
+    let steamcmdCommand, steamcmdArgsPrefix;
+    if (process.platform === 'win32') {
+      steamcmdCommand = steamcmd;
+      steamcmdArgsPrefix = [];
+    } else {
+      steamcmdCommand = '/bin/bash';
+      steamcmdArgsPrefix = [steamcmd];
+    }
+
+    const loginArgs = [
+      ...steamcmdArgsPrefix,
+      '+@ShutdownOnFailedCommand', '1',
+      '+@NoPromptForPassword', '1',
+      '+force_install_dir', installDir,
+      '+login', username, password
+    ];
+
+    if (steamGuardCode) {
+      loginArgs.push(steamGuardCode);
+    }
+
+    loginArgs.push('+quit');
+
+    console.log(`[Steam Login] Testing login with SteamCMD (timeout: 60s), saving to ${installDir}...`);
+    
+    await runProcess(steamcmdCommand, loginArgs, 60000);
+    
+    // 登录成功，保存凭据（标记为持久化）
+    STEAM_CREDENTIALS.username = username;
+    STEAM_CREDENTIALS.password = ''; // 持久化后不需要保存密码
+    STEAM_CREDENTIALS.steamGuardCode = '';
+    STEAM_CREDENTIALS.isPersistent = true; // 标记为持久化登录
+
+    console.log(`[Steam Login] Login successful for user: ${username}, credentials persisted to ${installDir}`);
+    
+    jsonRes(res, 200, { 
+      success: true, 
+      message: '登录成功，凭据已持久化',
+      username: username,
+      hasSteamGuard: !!steamGuardCode,
+      isPersistent: true
+    });
+  } catch (e) {
+    console.error(`[Steam Login] Login failed:`, e.message);
+    
+    let errorMsg = '登录失败';
+    let needsSteamGuard = false;
+    const errStr = String(e.message || '').toLowerCase();
+    const errOutput = String(e.stderr || e.stdout || '').toLowerCase();
+    const fullError = errStr + ' ' + errOutput;
+    
+    // 检测是否需要 Steam Guard
+    if (fullError.includes('steam guard') || 
+        fullError.includes('steamguard') || 
+        fullError.includes('two-factor') ||
+        fullError.includes('authentication code') ||
+        fullError.includes('enter the code')) {
+      needsSteamGuard = true;
+      errorMsg = '需要 Steam Guard 验证码';
+    } else if (fullError.includes('password') || fullError.includes('credentials') || fullError.includes('incorrect')) {
+      errorMsg = '用户名或密码错误';
+    } else if (fullError.includes('timeout') || fullError.includes('超时')) {
+      errorMsg = '登录超时，请检查网络连接或稍后重试';
+    } else if (fullError.includes('denied') || fullError.includes('access')) {
+      errorMsg = '访问被拒绝，账号可能被锁定';
+    } else if (fullError.includes('rate limit')) {
+      errorMsg = '登录请求过于频繁，请稍后再试';
+    } else {
+      errorMsg = `登录失败: ${e.message}`;
+    }
+    
+    jsonRes(res, needsSteamGuard ? 202 : 401, { 
+      error: errorMsg,
+      needsSteamGuard: needsSteamGuard
+    });
+  }
+}
+
+async function handleSteamLogout(req, res) {
+  const wasPersistent = STEAM_CREDENTIALS.isPersistent;
+  const username = STEAM_CREDENTIALS.username;
+  
+  // 清除内存中的凭据
+  STEAM_CREDENTIALS.username = '';
+  STEAM_CREDENTIALS.password = '';
+  STEAM_CREDENTIALS.steamGuardCode = '';
+  STEAM_CREDENTIALS.isPersistent = false;
+  
+  // 如果是持久化登录，尝试清理 Steam 配置文件
+  if (wasPersistent && username) {
+    try {
+      const loginUsersVdf = path.join(STEAM_CONFIG_DIR, 'config', 'loginusers.vdf');
+      if (fs.existsSync(loginUsersVdf)) {
+        // 备份原文件
+        const backupPath = loginUsersVdf + '.backup';
+        fs.copyFileSync(loginUsersVdf, backupPath);
+        
+        // 删除登录文件以清除持久化登录
+        fs.unlinkSync(loginUsersVdf);
+        console.log(`[Steam Logout] Removed persistent login file for user: ${username}`);
+      }
+    } catch (e) {
+      console.warn('[Steam Logout] Failed to remove persistent login file:', e.message);
+    }
+  }
+  
+  console.log('[Steam Logout] Credentials cleared');
+  jsonRes(res, 200, { success: true, message: '已退出登录' });
+}
+
+async function handleSteamStatus(req, res) {
+  const isLoggedIn = !!(STEAM_CREDENTIALS.username && (STEAM_CREDENTIALS.password || STEAM_CREDENTIALS.isPersistent));
+  jsonRes(res, 200, { 
+    loggedIn: isLoggedIn,
+    username: isLoggedIn ? STEAM_CREDENTIALS.username : null,
+    isPersistent: STEAM_CREDENTIALS.isPersistent || false
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Video Streaming API - 下载到本地后串流
+// ─────────────────────────────────────────────────────────────────
+const VIDEO_CACHE = new Map(); // 缓存视频文件路径
+
+async function handleVideoStream(req, res, id) {
+  const wantId = parseInt(id);
+  if (!wantId) return jsonRes(res, 400, { error: 'Invalid id' });
+
+  console.log(`[Video Stream] Request for id=${wantId}`);
+
+  // 先检查缓存，如果已有缓存则直接使用，无需查询 Steam API
+  let videoPath = VIDEO_CACHE.get(String(wantId));
+  
+  if (videoPath && fs.existsSync(videoPath)) {
+    console.log(`[Video Stream] Using cached video: ${videoPath}`);
+  } else {
+    // 只有在没有缓存时才查询 Steam API
+    let d = null;
+    try {
+      const list = await getFileDetails([String(wantId)]);
+      d = list[0] && list[0].result === 1 ? list[0] : null;
+    } catch (e) {
+      return jsonRes(res, 502, { error: `Steam detail error: ${e.message}` });
+    }
+
+    if (!d) return jsonRes(res, 404, { error: '壁纸不存在或不可见' });
+
+    const appId = parseInt(d.consumer_appid || d.consumer_app_id || d.appid || 431960) || 431960;
+    const isVideo = detectVideoTag(d);
+
+    if (!isVideo) {
+      return jsonRes(res, 400, { error: '该项目不是视频类型' });
+    }
+
+    console.log(`[Video Stream] Downloading video for id=${wantId}...`);
+    
+    try {
+      const downloaded = await downloadViaSteamCmd(wantId, appId, d.title, { videoOnly: true });
+      
+      if (downloaded.kind === 'file') {
+        videoPath = downloaded.filePath;
+        
+        // 直接使用下载的视频文件路径，不再复制
+        // 如果使用的是共享目录（持久化登录），文件会保留在 workshop 目录
+        // 如果使用的是临时目录（匿名下载），文件会在使用后被清理
+        VIDEO_CACHE.set(String(wantId), videoPath);
+        console.log(`[Video Stream] Video ready at: ${videoPath}`);
+        
+        // 如果使用的是临时目录，需要在响应结束后清理
+        if (!downloaded.useSharedDir && downloaded.tempRoot) {
+          res.on('finish', () => {
+            setTimeout(() => {
+              try {
+                if (fs.existsSync(downloaded.tempRoot)) {
+                  fs.rmSync(downloaded.tempRoot, { recursive: true, force: true });
+                  console.log(`[Video Stream] Cleaned up temp dir: ${downloaded.tempRoot}`);
+                  // 清理缓存引用
+                  VIDEO_CACHE.delete(String(wantId));
+                }
+              } catch (e) {
+                console.warn('[Video Stream] Failed to cleanup temp dir:', e.message);
+              }
+            }, 5000); // 延迟5秒清理，确保传输完成
+          });
+        }
+      } else {
+        return jsonRes(res, 500, { error: '无法获取视频文件' });
+      }
+    } catch (e) {
+      console.error('[Video Stream Download Error]', e.message);
+      return jsonRes(res, 409, { error: `视频下载失败: ${e.message}` });
+    }
+  }
+
+  // 串流视频文件
+  try {
+    const stat = fs.statSync(videoPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+    const videoType = mimeFromExt(extFromPath(videoPath, '.mp4'));
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = (end - start) + 1;
+      
+      console.log(`[Video Stream] Range request: ${start}-${end}/${fileSize}`);
+      
+      const stream = fs.createReadStream(videoPath, { start, end, highWaterMark: 1024 * 1024 });
+
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': videoType,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=3600'
+      });
+      
+      stream.pipe(res);
+      
+      stream.on('error', (err) => {
+        console.error('[Video Stream] Stream error:', err.message);
+        if (!res.headersSent) {
+          res.writeHead(500);
+          res.end('Stream error');
+        }
+      });
+    } else {
+      console.log(`[Video Stream] Full file request: ${fileSize} bytes`);
+      
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': videoType,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=3600'
+      });
+      
+      const stream = fs.createReadStream(videoPath);
+      stream.pipe(res);
+      
+      stream.on('error', (err) => {
+        console.error('[Video Stream] Stream error:', err.message);
+        if (!res.headersSent) {
+          res.writeHead(500);
+          res.end('Stream error');
+        }
+      });
+    }
+  } catch (e) {
+    console.error('[Video Stream Error]', e.message);
+    return jsonRes(res, 500, { error: `视频串流失败: ${e.message}` });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1356,6 +1928,66 @@ const server = http.createServer(async (req, res) => {
       if (!id) return jsonRes(res,400,{error:'Missing id'});
       await handleDownload(res, id, title); return;
     }
+    if (pn==='/api/steam/login' && req.method==='POST') {
+      await handleSteamLogin(req, res); return;
+    }
+    if (pn==='/api/steam/logout' && req.method==='POST') {
+      await handleSteamLogout(req, res); return;
+    }
+    if (pn==='/api/steam/status' && req.method==='GET') {
+      await handleSteamStatus(req, res); return;
+    }
+    if (pn==='/api/video/stream' && req.method==='GET') {
+      const q = new URL(req.url,'http://x').searchParams;
+      const id = q.get('id');
+      if (!id) return jsonRes(res,400,{error:'Missing id'});
+      await handleVideoStream(req, res, id); return;
+    }
+    if (pn==='/api/video/cache/settings' && req.method==='GET') {
+      jsonRes(res, 200, VIDEO_CACHE_SETTINGS); return;
+    }
+    if (pn==='/api/video/cache/settings' && req.method==='POST') {
+      try {
+        const body = await readBody(req);
+        const data = JSON.parse(body);
+        if (data.cacheDays && typeof data.cacheDays === 'number' && data.cacheDays >= 1 && data.cacheDays <= 365) {
+          VIDEO_CACHE_SETTINGS.cacheDays = data.cacheDays;
+          saveCacheSettings();
+          jsonRes(res, 200, { success: true, cacheDays: VIDEO_CACHE_SETTINGS.cacheDays });
+        } else {
+          jsonRes(res, 400, { error: 'Invalid cacheDays value' });
+        }
+      } catch (e) {
+        jsonRes(res, 400, { error: 'Invalid JSON' });
+      }
+      return;
+    }
+    if (pn==='/api/video/cache/clear' && req.method==='POST') {
+      try {
+        let deletedCount = 0;
+        if (fs.existsSync(WORKSHOP_CACHE_DIR)) {
+          const items = fs.readdirSync(WORKSHOP_CACHE_DIR);
+          for (const item of items) {
+            const itemPath = path.join(WORKSHOP_CACHE_DIR, item);
+            try {
+              const stats = fs.statSync(itemPath);
+              if (stats.isDirectory()) {
+                fs.rmSync(itemPath, { recursive: true, force: true });
+                deletedCount++;
+              }
+            } catch (e) {
+              console.warn(`[Cache] Failed to delete ${item}:`, e.message);
+            }
+          }
+        }
+        console.log(`[Cache] Manually cleared ${deletedCount} workshop items`);
+        jsonRes(res, 200, { success: true, deletedCount });
+      } catch (e) {
+        console.error('[Cache] Clear failed:', e);
+        jsonRes(res, 500, { error: e.message });
+      }
+      return;
+    }
     serveStatic(req,res);
   } catch(err) {
     console.error('[Unhandled]',err);
@@ -1365,11 +1997,32 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT,'0.0.0.0',()=>{
   console.log('\n  ╔═══════════════════════════════════════════╗');
-  console.log(`  ║  WallHub v4.1  ·  http://localhost:${PORT}  ║`);
+  console.log(`  ║  WallHub v4.3  ·  http://localhost:${PORT}  ║`);
   console.log('  ╚═══════════════════════════════════════════╝\n');
   console.log(`  📂 public : ${PUBLIC}`);
   console.log(`  🔍 debug  : http://localhost:${PORT}/api/debug`);
-  console.log(`  💻 Node   : ${process.version}\n`);
+  console.log(`  💻 Node   : ${process.version}`);
+  console.log(`  🖥️  OS     : ${process.platform}`);
+  console.log(`  📁 Steam  : ${STEAM_CONFIG_DIR}\n`);
+  
+  // 确保 Steam 配置目录存在
+  ensureSteamConfigDir();
+  
+  // 初始化 Steam 凭据（检测持久化登录）
+  initializeSteamCredentials();
+  
+  // 加载缓存设置
+  loadCacheSettings();
+  
+  // 启动定时清理任务（每小时检查一次）
+  setInterval(() => {
+    cleanOldCacheFiles();
+  }, 60 * 60 * 1000);
+  
+  // 启动时清理一次
+  setTimeout(() => {
+    cleanOldCacheFiles();
+  }, 5000);
 });
 server.on('error',err=>{
   if(err.code==='EADDRINUSE') console.error(`\n❌ 端口 ${PORT} 已占用\n`);

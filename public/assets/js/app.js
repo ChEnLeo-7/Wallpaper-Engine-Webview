@@ -1,4 +1,5 @@
 const APPID = 431960, PAGE_SIZE = 30;
+const PROXY_DOMAINS = ['steamcommunity.com', 'api.steampowered.com', 'steamusercontent.com'];
 const PREFS_KEY = 'wallhub-prefs-v1';
 
 const S = {
@@ -73,6 +74,10 @@ const I18N = {
     proxyDesc: '检测到请求 Steam 社区服务失败。请先开启 VPN/代理，再点击重试。',
     proxyRaw: '原始错误：{msg}',
     proxyRetest: '已开启代理，立即重试',
+    copyProxyDomains: '复制代理域名',
+    copiedProxyDomains: '代理域名已复制',
+    copyFailed: '复制失败，请手动复制',
+    noClipboard: '当前环境不支持自动复制，请手动复制域名',
     emptyData: '暂无壁纸数据',
     untitled: '未命名壁纸',
     subscribe: '订阅',
@@ -94,12 +99,8 @@ const I18N = {
     processing: '正在处理',
     packaging: '项目正在打包中',
     packagingToast: '项目正在打包中，请稍候…',
-    downloadReceiving: '正在接收文件',
-    downloadQueued: '排队中',
-    downloadElapsed: '已用时 {time}',
     downloadStarted: '已开始下载：{name}',
     downloadFailed: '工坊项目下载失败: {msg}',
-    networkFetchFailed: '无法连接下载接口，请确认服务已启动并刷新页面重试',
     btnDownloaded: '已下载',
     btnFailed: '失败',
   },
@@ -167,6 +168,10 @@ const I18N = {
     proxyDesc: 'Request to Steam Community failed. Enable VPN/proxy and try again.',
     proxyRaw: 'Original error: {msg}',
     proxyRetest: 'Retry after enabling proxy',
+    copyProxyDomains: 'Copy proxy domains',
+    copiedProxyDomains: 'Proxy domains copied',
+    copyFailed: 'Copy failed, please copy manually',
+    noClipboard: 'Clipboard API unavailable, please copy manually',
     emptyData: 'No wallpaper data',
     untitled: 'Untitled Wallpaper',
     subscribe: 'Subscribe',
@@ -188,19 +193,14 @@ const I18N = {
     processing: 'Processing',
     packaging: 'Packaging',
     packagingToast: 'Packaging in progress, please wait…',
-    downloadReceiving: 'Receiving file',
-    downloadQueued: 'Queued',
-    downloadElapsed: 'Elapsed {time}',
     downloadStarted: 'Download started: {name}',
     downloadFailed: 'Workshop download failed: {msg}',
-    networkFetchFailed: 'Cannot reach download API. Ensure server is running, then refresh and retry.',
     btnDownloaded: 'Downloaded',
     btnFailed: 'Failed',
   }
 };
 
 let currentLang = 'zh';
-const activeDownloads = new Set();
 
 const GENRES=[
   {id:'Abstract',n:'抽象'},{id:'Animal',n:'动物'},{id:'Anime',n:'日本动画'},
@@ -222,26 +222,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   setupEvents();
   applyStateToControls();
   syncFiltersFromControls();
-  syncMobileHeaderOffset();
-  if (window.ResizeObserver) {
-    const h = document.querySelector('.header');
-    if (h) new ResizeObserver(syncMobileHeaderOffset).observe(h);
-  }
-  window.addEventListener('resize', syncMobileHeaderOffset, { passive: true });
-  window.addEventListener('orientationchange', syncMobileHeaderOffset, { passive: true });
+  checkSteamLoginStatus();
   load();
 });
-function syncMobileHeaderOffset(){
-  const h = document.querySelector('.header');
-  if (!h) return;
-  const w = window.innerWidth || document.documentElement.clientWidth || 0;
-  if (w > 768) {
-    document.documentElement.style.removeProperty('--mobile-header-offset');
-    return;
-  }
-  const px = Math.ceil(h.getBoundingClientRect().height);
-  document.documentElement.style.setProperty('--mobile-header-offset', `${px}px`);
-}
 
 function t(k, vars){
   let s = (I18N[currentLang] && I18N[currentLang][k]) || I18N.zh[k] || k;
@@ -279,6 +262,7 @@ function switchLanguage(lang){
   currentLang = lang;
   localStorage.setItem('wallhub-lang', lang);
   applyLanguage();
+  updateSettingsCheckmarks();
   renderGenreGrid();
   renderItems(S.items || []);
   renderPagination();
@@ -383,14 +367,14 @@ function applyLanguage(){
   const siteDisclaimerText = document.getElementById('siteDisclaimerText');
   if (siteDisclaimerText) siteDisclaimerText.textContent = t('disclaimerText');
   applyTheme(document.body.classList.contains('theme-light') ? 'light' : 'dark');
-  syncMobileHeaderOffset();
 }
 
 function setupEvents(){
   document.getElementById('searchInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
   document.getElementById('searchBtn').addEventListener('click', doSearch);
   document.getElementById('usageBtn').addEventListener('click', openUsage);
-  document.getElementById('themeBtn').addEventListener('click', toggleTheme);
+  document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
+  document.getElementById('loginBtn').addEventListener('click', openLoginModal);
   document.getElementById('sortSel').addEventListener('change', e=>{ S.f.sort=e.target.value; S.page=1; syncDaysVisible(); savePrefs(); load(); });
   document.getElementById('daysSel').addEventListener('change', e=>{ S.f.days=e.target.value; S.page=1; savePrefs(); load(); });
   document.getElementById('typeSel').addEventListener('change', e=>{ S.f.type=e.target.value; S.page=1; savePrefs(); load(); });
@@ -424,6 +408,7 @@ function applyTheme(mode){
     btn.setAttribute('aria-label', btn.title);
   }
   localStorage.setItem('wallhub-theme', isLight ? 'light' : 'dark');
+  updateSettingsCheckmarks();
 }
 function toggleTheme(){
   applyTheme(document.body.classList.contains('theme-light') ? 'dark' : 'light');
@@ -431,6 +416,102 @@ function toggleTheme(){
 function openUsage(){ document.getElementById('usageOv').classList.add('open'); document.body.style.overflow='hidden'; }
 function closeUsage(){ document.getElementById('usageOv').classList.remove('open'); document.body.style.overflow=''; }
 function usageOvClick(e){ if(e.target===document.getElementById('usageOv')) closeUsage(); }
+
+function openSettingsModal(){
+  updateSettingsCheckmarks();
+  document.getElementById('settingsModalOv').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeSettingsModal(){
+  document.getElementById('settingsModalOv').classList.remove('open');
+  document.body.style.overflow='';
+}
+function settingsModalOvClick(e){
+  if(e.target===document.getElementById('settingsModalOv')) closeSettingsModal();
+}
+function updateSettingsCheckmarks(){
+  // Update language checkmarks
+  const langZhCheck = document.querySelector('#langZh .settings-option-check');
+  const langEnCheck = document.querySelector('#langEn .settings-option-check');
+  if(langZhCheck) langZhCheck.style.display = currentLang === 'zh' ? 'inline' : 'none';
+  if(langEnCheck) langEnCheck.style.display = currentLang === 'en' ? 'inline' : 'none';
+  
+  // Update theme checkmarks
+  const isLight = document.body.classList.contains('theme-light');
+  const themeDarkCheck = document.querySelector('#themeDark .settings-option-check');
+  const themeLightCheck = document.querySelector('#themeLight .settings-option-check');
+  if(themeDarkCheck) themeDarkCheck.style.display = !isLight ? 'inline' : 'none';
+  if(themeLightCheck) themeLightCheck.style.display = isLight ? 'inline' : 'none';
+  
+  // Load cache settings
+  loadCacheSettings();
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Video Cache Management Functions
+// ─────────────────────────────────────────────────────────────────
+async function loadCacheSettings(){
+  try {
+    const res = await fetch('/api/video/cache/settings');
+    if(res.ok){
+      const data = await res.json();
+      const input = document.getElementById('cacheDaysInput');
+      if(input && data.cacheDays) input.value = data.cacheDays;
+    }
+  } catch(e){
+    console.warn('[Cache] Failed to load settings:', e);
+  }
+}
+
+async function saveCacheSettings(){
+  const input = document.getElementById('cacheDaysInput');
+  if(!input) return;
+  
+  const days = parseInt(input.value);
+  if(isNaN(days) || days < 1 || days > 365){
+    toast('请输入有效的天数 (1-365)', 'warn');
+    return;
+  }
+  
+  try {
+    const res = await fetch('/api/video/cache/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ cacheDays: days })
+    });
+    
+    if(res.ok){
+      toast('缓存设置已保存', 'ok');
+    } else {
+      throw new Error('保存失败');
+    }
+  } catch(e){
+    console.error('[Cache] Save failed:', e);
+    toast('保存缓存设置失败', 'warn');
+  }
+}
+
+async function clearVideoCache(){
+  if(!confirm('确定要清除所有缓存的视频文件吗？此操作不可撤销。')){
+    return;
+  }
+  
+  try {
+    const res = await fetch('/api/video/cache/clear', {
+      method: 'POST'
+    });
+    
+    if(res.ok){
+      const data = await res.json();
+      toast(`已清除 ${data.deletedCount || 0} 个缓存文件`, 'ok');
+    } else {
+      throw new Error('清除失败');
+    }
+  } catch(e){
+    console.error('[Cache] Clear failed:', e);
+    toast('清除缓存失败', 'warn');
+  }
+}
 
 function doSearch(){
   S.f.search = document.getElementById('searchInput').value.trim();
@@ -634,6 +715,8 @@ function showError(msg){
   const content = `
       <div style="font-size:44px">⚠️</div>
       <div style="color:var(--danger);font-size:16px;font-weight:600">${t('loadFailed')}</div>
+      <div style="font-size:13px;color:var(--text3);max-width:420px">${esc(msg)}</div>
+      <button onclick="load()" style="background:var(--accent);border:none;border-radius:8px;color:#fff;padding:9px 22px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;margin-top:4px">🔄 ${t('retry')}</button>
       ${proxyTipHtml(msg)}
   `;
   document.getElementById('wcon').innerHTML=`
@@ -651,8 +734,17 @@ function proxyTipHtml(msg){
       <div class="proxy-desc">${t('proxyRaw', { msg: esc(msg || t('loadFailed')) })}</div>
       <div class="proxy-actions">
         <button class="proxy-btn" onclick="load()">${t('proxyRetest')}</button>
+        <button class="proxy-btn alt" onclick="copyProxyDomains()">${t('copyProxyDomains')}</button>
       </div>
     </div>`;
+}
+function copyProxyDomains(){
+  const txt = PROXY_DOMAINS.join('\n');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast(t('copiedProxyDomains'),'ok')).catch(()=>toast(t('copyFailed'),'warn'));
+    return;
+  }
+  toast(t('noClipboard'),'warn');
 }
 
 function renderItems(items){
@@ -764,6 +856,9 @@ function openModal(id){
   const item = S.items.find(w=>w.publishedfileid===id);
   if(!item) return;
 
+  currentModalItem = { id, title: item.title };
+  const isVideo = getType(item) === 'Video';
+
   const thumb = item.preview_url||'';
   document.getElementById('mTitle').textContent = item.title||t('untitled');
   document.getElementById('mSub').innerHTML = `<span>🆔 ${id}</span><span>${t('authorLoading')}</span>`;
@@ -772,6 +867,11 @@ function openModal(id){
   document.getElementById('mDesc').textContent = item.short_description||t('loadingDesc');
   document.getElementById('mSteam').href = `https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`;
   document.getElementById('mSubBtn').onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); closeModal(); dlWall(id, item.title); };
+
+  const playBtn = document.getElementById('mPlayBtn');
+  if(playBtn){
+    playBtn.style.display = isVideo ? '' : 'none';
+  }
 
   renderStats({
     subs:  fmtN(item.subscriptions||item.lifetime_subscriptions||0),
@@ -848,131 +948,55 @@ function closeModal(){
 }
 function mOvClick(e){ if(e.target===document.getElementById('mOv')) closeModal(); }
 
-function fmtDuration(ms){
-  const secs = Math.max(0, Math.floor((ms || 0) / 1000));
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
-function setSubBtnProgress(btn, icon, text, percent){
-  if(!btn) return;
-  const p = Math.max(0, Math.min(100, Number(percent) || 0));
-  btn.classList.add('progressing');
-  btn.style.setProperty('--dl-progress', `${p}%`);
-  btn.innerHTML = `
-    <span class="sub-main"><i>${icon}</i><span class="sub-main-text">${text} ${Math.round(p)}%</span></span>
-  `;
-}
-function requestDownloadBlob(url, onProgress){
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'blob';
-    xhr.timeout = 30 * 60 * 1000;
-    xhr.onprogress = (evt) => {
-      if (!onProgress) return;
-      onProgress(evt.loaded || 0, evt.lengthComputable ? (evt.total || 0) : 0);
-    };
-    xhr.onload = async () => {
-      const status = xhr.status || 0;
-      const contentDisposition = xhr.getResponseHeader('content-disposition') || '';
-      const contentLength = parseInt(xhr.getResponseHeader('content-length') || '0') || 0;
-      if (status >= 200 && status < 300) {
-        resolve({ blob: xhr.response, contentDisposition, contentLength });
-        return;
-      }
-      let msg = `HTTP ${status || 502}`;
-      try {
-        const text = await xhr.response.text();
-        const json = JSON.parse(text || '{}');
-        msg = json.error || json.message || msg;
-      } catch {}
-      reject(new Error(msg));
-    };
-    xhr.onerror = () => reject(new Error('NetworkError'));
-    xhr.ontimeout = () => reject(new Error('Timeout'));
-    xhr.onabort = () => reject(new Error('AbortError'));
-    xhr.send();
-  });
-}
-function normalizeDownloadError(err){
-  const msg = String((err && err.message) || '').trim();
-  if (!msg) return t('resFailed');
-  if (msg === 'AbortError') return '';
-  const lower = msg.toLowerCase();
-  if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('load failed')) {
-    return t('networkFetchFailed');
-  }
-  return msg;
-}
-
-async function dlWall(fid, title){
-  const key = String(fid || '').trim();
-  if (!key) return;
-  if (activeDownloads.has(key)) {
-    toast(t('processing'),'info');
-    return;
-  }
-  activeDownloads.add(key);
+function dlWall(fid, title){
   const btn=document.getElementById(`sub-${fid}`);
-  let progress = 0;
-  const startAt = Date.now();
-  let phase = 'queue';
-  let hasToastPack = false;
-  const tick = setInterval(()=>{
-    if (phase === 'queue') progress = Math.min(68, progress + 1.2);
-    const text = phase === 'queue' ? t('packaging') : t('downloadReceiving');
-    const icon = phase === 'queue' ? '📦' : '⬇️';
-    if (phase === 'queue' && !hasToastPack && Date.now() - startAt > 1600) {
+  let packTimer=0;
+  if(btn){
+    btn.classList.add('dling');
+    btn.innerHTML=`<i>⏳</i> ${t('processing')}`;
+    packTimer=setTimeout(()=>{
+      if(!btn.classList.contains('dling')) return;
+      btn.innerHTML=`<i>📦</i> ${t('packaging')}`;
       toast(t('packagingToast'),'info');
-      hasToastPack = true;
-    }
-    setSubBtnProgress(btn, icon, text, progress);
-  }, 650);
-  try{
-    if(btn){
-      btn.classList.add('dling');
-      setSubBtnProgress(btn, '⏳', t('downloadQueued'), 0);
-    }
-    const dlUrl = `/api/download?id=${fid}&title=${encodeURIComponent(title||'')}`;
-    const dl = await requestDownloadBlob(dlUrl, (loaded, total) => {
-      if (phase !== 'stream') phase = 'stream';
-      if (total > 0) progress = Math.max(progress, Math.min(99, (loaded / total) * 100));
-      else progress = Math.max(progress, Math.min(96, progress + 0.6));
-      setSubBtnProgress(btn, '⬇️', t('downloadReceiving'), progress);
-    });
-    const d = dl.contentDisposition || '';
-    const m=d.match(/filename\*=UTF-8''([^;]+)/i) || d.match(/filename="([^"]+)"/i);
-    const name=decodeURIComponent((m&&m[1])?m[1]:(`${title||('wallpaper-'+fid)}.bin`));
-    const blob = dl.blob;
-    progress = Math.max(progress, 99);
-    setSubBtnProgress(btn, '✅', t('btnDownloaded'), 100);
-    const u=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=u;
-    a.download=name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(u),1500);
-    toast(t('downloadStarted', { name }), 'ok');
-    if(btn){
-      btn.classList.remove('dling');
-      btn.classList.add('done');
-    }
-  } catch(e){
-    const userMsg = normalizeDownloadError(e);
-    if (userMsg) toast(t('downloadFailed', { msg: userMsg }), 'warn');
-    if(btn){
-      btn.classList.remove('dling');
-      btn.classList.remove('progressing');
-      btn.style.removeProperty('--dl-progress');
-      btn.innerHTML=`<i>⚠</i> ${t('btnFailed')}`;
-    }
-  } finally {
-    clearInterval(tick);
-    activeDownloads.delete(key);
+    },1800);
   }
+  fetch(`/api/download?id=${fid}&title=${encodeURIComponent(title||'')}`)
+    .then(async r=>{
+      if(!r.ok){
+        let msg=`HTTP ${r.status}`;
+        try{
+          const j=await r.json();
+          msg=j.error||msg;
+        }catch{}
+        throw new Error(msg);
+      }
+      const d=r.headers.get('content-disposition')||'';
+      const m=d.match(/filename\*=UTF-8''([^;]+)/i) || d.match(/filename="([^"]+)"/i);
+      const name=decodeURIComponent((m&&m[1])?m[1]:(`${title||('wallpaper-'+fid)}.bin`));
+      return r.blob().then(b=>({b,name}));
+    })
+    .then(({b,name})=>{
+      if(packTimer) clearTimeout(packTimer);
+      const u=URL.createObjectURL(b);
+      const a=document.createElement('a');
+      a.href=u;
+      a.download=name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(u),1500);
+      toast(t('downloadStarted', { name }), 'ok');
+      if(btn){
+        btn.classList.remove('dling');
+        btn.classList.add('done');
+        btn.innerHTML=`<i>✓</i> ${t('btnDownloaded')}`;
+      }
+    })
+    .catch(e=>{
+      if(packTimer) clearTimeout(packTimer);
+      toast(t('downloadFailed', { msg: e.message }), 'warn');
+      if(btn){ btn.classList.remove('dling'); btn.innerHTML=`<i>⚠</i> ${t('btnFailed')}`; }
+    });
 }
 
 function getType(item){
@@ -999,4 +1023,213 @@ function toast(msg,type='info'){
   el.innerHTML=`<span class="ti">${type==='ok'?'✓':type==='warn'?'⚠':'↗'}</span>${msg}`;
   wrap.appendChild(el);
   setTimeout(()=>el.remove(),2700);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Steam Login Functions
+// ─────────────────────────────────────────────────────────────────
+let currentModalItem = null;
+
+async function checkSteamLoginStatus(){
+  try {
+    const res = await fetch('/api/steam/status');
+    if(!res.ok) return;
+    const data = await res.json();
+    updateLoginButton(data.loggedIn, data.username);
+  } catch(e) {
+    console.warn('[Steam Status]', e.message);
+  }
+}
+
+function updateLoginButton(loggedIn, username){
+  const btn = document.getElementById('loginBtn');
+  if(!btn) return;
+  
+  if(loggedIn){
+    btn.classList.add('logged-in');
+    btn.title = `已登录: ${username || 'Steam用户'}`;
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    btn.onclick = showLogoutConfirm;
+  } else {
+    btn.classList.remove('logged-in');
+    btn.title = 'Steam 登录';
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    btn.onclick = openLoginModal;
+  }
+}
+
+function showLogoutConfirm(){
+  if(confirm('确定要退出 Steam 登录吗？')){
+    logoutSteam();
+  }
+}
+
+async function logoutSteam(){
+  try {
+    const res = await fetch('/api/steam/logout', { method: 'POST' });
+    if(!res.ok) throw new Error('退出失败');
+    const data = await res.json();
+    toast(data.message || '已退出登录', 'ok');
+    updateLoginButton(false, null);
+  } catch(e) {
+    toast('退出失败: ' + e.message, 'warn');
+  }
+}
+
+function openLoginModal(){
+  document.getElementById('loginModalOv').classList.add('open');
+  document.body.style.overflow='hidden';
+  document.getElementById('steamUsername').value = '';
+  document.getElementById('steamPassword').value = '';
+  document.getElementById('steamGuardCode').value = '';
+  
+  // 隐藏 Steam Guard 输入框
+  const guardGroup = document.getElementById('steamGuardGroup');
+  if(guardGroup) guardGroup.style.display = 'none';
+  
+  // 重置按钮文字
+  const btn = document.getElementById('loginSubmitBtn');
+  if(btn) btn.textContent = '登录';
+  
+  document.getElementById('steamUsername').focus();
+}
+
+function closeLoginModal(){
+  document.getElementById('loginModalOv').classList.remove('open');
+  document.body.style.overflow='';
+}
+
+function loginModalOvClick(e){
+  if(e.target === document.getElementById('loginModalOv')) closeLoginModal();
+}
+
+async function submitSteamLogin(){
+  const username = document.getElementById('steamUsername').value.trim();
+  const password = document.getElementById('steamPassword').value.trim();
+  const steamGuardCode = document.getElementById('steamGuardCode').value.trim();
+  const guardGroup = document.getElementById('steamGuardGroup');
+  const isRetry = guardGroup && guardGroup.style.display !== 'none';
+  
+  if(!username || !password){
+    toast('请输入用户名和密码', 'warn');
+    return;
+  }
+  
+  const btn = document.getElementById('loginSubmitBtn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = isRetry ? '验证中...' : '登录验证中...';
+  
+  try {
+    const res = await fetch('/api/steam/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, steamGuardCode, isRetry })
+    });
+    
+    const data = await res.json();
+    
+    if(res.status === 202 && data.needsSteamGuard){
+      // 需要 Steam Guard 验证码
+      toast('请输入 Steam Guard 验证码', 'info');
+      if(guardGroup) {
+        guardGroup.style.display = '';
+        document.getElementById('steamGuardCode').focus();
+      }
+      btn.disabled = false;
+      btn.textContent = '提交验证码';
+      return;
+    }
+    
+    if(!res.ok){
+      throw new Error(data.error || '登录失败');
+    }
+    
+    toast(data.message || '登录成功', 'ok');
+    updateLoginButton(true, username);
+    closeLoginModal();
+  } catch(e) {
+    console.error('[Login Error]', e);
+    toast(e.message || '登录失败，请检查账号信息', 'warn');
+  } finally {
+    if(btn.textContent !== '提交验证码') {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Video Player Functions
+// ─────────────────────────────────────────────────────────────────
+function openVideoModal(id, title){
+  currentModalItem = { id, title };
+  document.getElementById('videoTitle').textContent = title || '视频播放';
+  document.getElementById('videoModalOv').classList.add('open');
+  document.body.style.overflow='hidden';
+  
+  const video = document.getElementById('videoPlayer');
+  
+  // 显示加载提示
+  toast('正在加载视频，请稍候...', 'info');
+  
+  video.src = `/api/video/stream?id=${id}`;
+  video.load();
+  
+  let loadStartTime = Date.now();
+  let hasShownError = false;
+  
+  video.onloadeddata = function(){
+    const loadTime = ((Date.now() - loadStartTime) / 1000).toFixed(1);
+    console.log(`[Video] Loaded in ${loadTime}s`);
+    toast('视频加载完成', 'ok');
+    hasShownError = false;
+    // 自动播放视频
+    video.play().catch(err => {
+      console.warn('[Video] Autoplay failed:', err);
+      // 如果自动播放失败（浏览器策略限制），不显示错误
+    });
+  };
+  
+  video.onerror = function(){
+    if (hasShownError) return; // 防止重复提示
+    hasShownError = true;
+    
+    console.error('[Video] Load error');
+    setTimeout(() => {
+      if (document.getElementById('videoModalOv').classList.contains('open')) {
+        closeVideoModal();
+      }
+    }, 3000);
+  };
+  
+  video.onwaiting = function(){
+    console.log('[Video] Buffering...');
+  };
+  
+  video.onplaying = function(){
+    console.log('[Video] Playing');
+    hasShownError = false;
+  };
+}
+
+function closeVideoModal(){
+  document.getElementById('videoModalOv').classList.remove('open');
+  document.body.style.overflow='';
+  
+  const video = document.getElementById('videoPlayer');
+  video.pause();
+  video.src = '';
+  video.load();
+  currentModalItem = null;
+}
+
+function videoModalOvClick(e){
+  if(e.target === document.getElementById('videoModalOv')) closeVideoModal();
+}
+
+function playVideo(){
+  if(!currentModalItem) return;
+  closeModal();
+  openVideoModal(currentModalItem.id, currentModalItem.title);
 }
