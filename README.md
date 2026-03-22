@@ -9,7 +9,7 @@
 </p>
 
 ## 关于二改作者的话
-此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，可能稍有遗漏。注意，下面部分内容为 AI 编写
+此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，可能稍有遗漏。注意，下面部分内容为 AI 编写，注意目前仍有一些未完善和小 BUG，但基本不影响使用
 
 ### 以下是作者原话：
 注：根据用户使用猖獗性而定，如有必要后期只留视频下载选项 如非必要则保持现状。 【本项目仅应急娱乐使用 不要视作为破解的理由】
@@ -48,6 +48,14 @@
 - **零依赖构建**：仅使用 Node.js 原生模块，无需 `npm install`，开箱即用
 
 ## 截图展示
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/2d18b9bf-e4c0-4c89-9749-09eb00c0ffb1" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/9ddaea0f-b8a5-4ca5-b62b-824384b8194b" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/b8b09a80-4d0e-4d12-b664-537b6c7ce0b0" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/061bc873-5a7b-4001-8403-d12ce73a67df" />
+<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/1d1699ac-7530-44a0-8209-350f1628f52c" />
+<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/c53e2283-583d-4d16-8ec6-d87e09d96a69" />
+<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/5486d689-658d-498d-9c08-febd6fe2d40a" />
+<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/4d39e199-6012-4de6-866c-94fd8ee5dd41" />
 
 
 
@@ -177,7 +185,9 @@ networks:
     ```
     docker-compose up -d
     ```
-   或者你是图形化 NAS 界面则手动在 web 界面选中 dockerfile 和 docker-compose 所在的路径  
+   或者你是图形化 NAS 界面则手动在 web 界面选中 dockerfile 和 docker-compose 所在的路径
+   
+6. **访问网页**：在浏览器打开 `http://localhost:3090` 
 
 **重要提示**：必须挂载 `/root/Steam` 目录才能实现登录状态持久化！
 
