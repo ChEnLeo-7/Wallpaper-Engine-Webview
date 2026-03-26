@@ -9,6 +9,11 @@
 </p>
 
 ## 关于二改作者的话
+
+参考的项目：
+https://github.com/0ran/wallpaper-engine-download-web
+https://github.com/TulpaMavis/wallpaper-engine-download-web
+
 此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，可能稍有遗漏。注意，下面部分内容为 AI 编写，注意目前仍有一些未完善和小 BUG，但基本不影响使用
 
 ### 以下是作者原话：
@@ -49,16 +54,14 @@
   - **视频类壁纸**：直接提取原始视频文件（.mp4等），可直接播放
 
 ## 截图展示
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/2d18b9bf-e4c0-4c89-9749-09eb00c0ffb1" />
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/9ddaea0f-b8a5-4ca5-b62b-824384b8194b" />
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/b8b09a80-4d0e-4d12-b664-537b6c7ce0b0" />
-<img width="1920" height="954" alt="image" src="https://github.com/user-attachments/assets/6caeb577-1585-44a7-9e1b-9dfce8357303" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/1d1699ac-7530-44a0-8209-350f1628f52c" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/c53e2283-583d-4d16-8ec6-d87e09d96a69" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/5486d689-658d-498d-9c08-febd6fe2d40a" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/4d39e199-6012-4de6-866c-94fd8ee5dd41" />
-
-
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/cd5843fe-7bf5-4cc7-9966-0cd8f42bdbeb" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5e47fc7e-d979-48d1-adb9-966c0b5dcc77" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5ee3adba-31e9-42c3-bad1-46b3703c0722" />
+</br></br>
+<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/9193144f-783f-42b0-8760-58994192e6aa" />
+<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/3862613b-048a-48aa-a499-2b8e069a2538" />
+<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/5d0e0b19-b2fb-4ef5-855a-599c44015006" />
+</br></br>
 
 ## 技术架构
 
