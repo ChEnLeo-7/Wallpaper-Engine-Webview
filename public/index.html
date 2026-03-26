@@ -211,6 +211,21 @@
         </div>
       </div>
       <div class="settings-section">
+        <div class="settings-section-title">Steam API</div>
+        <div class="settings-options">
+          <div class="settings-input-group">
+            <label for="steamApiKeyInput">Steam API Key:</label>
+            <input type="password" id="steamApiKeyInput" class="settings-input" placeholder="输入你的 Steam API Key">
+          </div>
+          <button class="settings-option" id="steamApiToggle" onclick="toggleSteamApi()">
+            <span class="settings-option-icon">🔑</span>
+            <span class="settings-option-text" id="steamApiToggleText">未启用 Steam API</span>
+            <span class="settings-option-check" id="steamApiToggleCheck" style="display:none;">✓</span>
+          </button>
+          <button class="settings-save-btn" onclick="saveCacheSettings()">保存 API 设置 / Save API</button>
+        </div>
+      </div>
+      <div class="settings-section">
         <div class="settings-section-title">视频缓存设置 / Video Cache</div>
         <div class="settings-options">
           <div class="settings-input-group">

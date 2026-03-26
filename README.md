@@ -92,8 +92,6 @@
 
 ### Docker 部署
 
-PS：虽然项目做了内存优化，但是还是建议加上内存限制参数！！！
-
 1. 下载完整的项目代码，在你部署的路径上新建文件夹 `node_server_data`  
 2. 将项目全部完整文件放到 `node_server_data` 文件夹下
 3. 然后在 `node_server_data` 的上一个文件夹下新增文件 `dockerfile` 、 `docker-compose.yml` ，分别填写下面的内容进去  

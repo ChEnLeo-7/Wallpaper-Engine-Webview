@@ -201,6 +201,7 @@ const I18N = {
 };
 
 let currentLang = 'zh';
+let steamApiEnabled = false;
 
 const GENRES=[
   {id:'Abstract',n:'抽象'},{id:'Animal',n:'动物'},{id:'Anime',n:'日本动画'},
@@ -458,14 +459,31 @@ async function loadCacheSettings(){
       const data = await res.json();
       const input = document.getElementById('cacheDaysInput');
       if(input && data.cacheDays) input.value = data.cacheDays;
+      const keyInput = document.getElementById('steamApiKeyInput');
+      if(keyInput) keyInput.value = data.steamApiKey || '';
+      steamApiEnabled = !!data.useSteamApi;
+      updateSteamApiToggleUI();
     }
   } catch(e){
     console.warn('[Cache] Failed to load settings:', e);
   }
 }
 
+function updateSteamApiToggleUI(){
+  const txt = document.getElementById('steamApiToggleText');
+  const chk = document.getElementById('steamApiToggleCheck');
+  if(txt) txt.textContent = steamApiEnabled ? '已启用 Steam API' : '未启用 Steam API';
+  if(chk) chk.style.display = steamApiEnabled ? 'inline' : 'none';
+}
+
+function toggleSteamApi(){
+  steamApiEnabled = !steamApiEnabled;
+  updateSteamApiToggleUI();
+}
+
 async function saveCacheSettings(){
   const input = document.getElementById('cacheDaysInput');
+  const keyInput = document.getElementById('steamApiKeyInput');
   if(!input) return;
   
   const days = parseInt(input.value);
@@ -478,11 +496,15 @@ async function saveCacheSettings(){
     const res = await fetch('/api/video/cache/settings', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ cacheDays: days })
+      body: JSON.stringify({
+        cacheDays: days,
+        steamApiKey: keyInput ? keyInput.value.trim() : '',
+        useSteamApi: steamApiEnabled
+      })
     });
     
     if(res.ok){
-      toast('缓存设置已保存', 'ok');
+      toast('设置已保存', 'ok');
     } else {
       throw new Error('保存失败');
     }

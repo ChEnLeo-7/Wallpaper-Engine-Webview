@@ -34,11 +34,10 @@ const getDefaultSteamConfigDir = () => {
   }
   return '/root/Steam';
 };
-
 const STEAM_CONFIG_DIR = process.env.STEAM_CONFIG_DIR || getDefaultSteamConfigDir();
 const WORKSHOP_CACHE_DIR = path.join(STEAM_CONFIG_DIR, 'steamapps', 'workshop', 'content', '431960');
 const CACHE_SETTINGS_FILE = path.join(__dirname, 'cache-settings.json');
-let VIDEO_CACHE_SETTINGS = { cacheDays: 7 }; // Default 7 days
+let VIDEO_CACHE_SETTINGS = { cacheDays: 7, steamApiKey: '', useSteamApi: false }; // Default settings
 
 // 确保 Steam 配置目录存在
 function ensureSteamConfigDir() {
@@ -57,7 +56,11 @@ function loadCacheSettings() {
   try {
     if (fs.existsSync(CACHE_SETTINGS_FILE)) {
       const data = fs.readFileSync(CACHE_SETTINGS_FILE, 'utf8');
-      VIDEO_CACHE_SETTINGS = JSON.parse(data);
+      const parsed = JSON.parse(data);
+      VIDEO_CACHE_SETTINGS = Object.assign(
+        { cacheDays: 7, steamApiKey: '', useSteamApi: false },
+        parsed || {}
+      );
       console.log(`[Cache] Loaded settings: ${VIDEO_CACHE_SETTINGS.cacheDays} days`);
     }
   } catch (e) {
@@ -783,6 +786,110 @@ async function scrapeIds(params) {
   return { ids, totalCount, hints };
 }
 
+function getSteamApiKey() {
+  const fromSettings = String(VIDEO_CACHE_SETTINGS.steamApiKey || '').trim();
+  const fromEnv = String(process.env.STEAM_API_KEY || '').trim();
+  return fromSettings || fromEnv;
+}
+
+function mapLocalQueryTypeToSteamApi(localType) {
+  const n = parseInt(localType);
+  if (n === 1) return 3;
+  if (n === 2) return 1;
+  if (n === 21) return 21;
+  if (n === 16) return 9;
+  return 3;
+}
+
+function buildSteamApiQueryFields(params, singleGenreTag) {
+  const requiredTags = [];
+  const typeTags = new Set(['Scene', 'Video', 'Web', 'Application']);
+  const ratingTags = new Set(['Everyone', 'Questionable', 'Mature']);
+  let typeTag = '';
+  let ratingTag = '';
+
+  for (const [k, v] of Object.entries(params || {})) {
+    if (!/^requiredtags/.test(k) || !v) continue;
+    const tag = String(v).trim();
+    if (!tag) continue;
+    if (typeTags.has(tag)) {
+      typeTag = tag;
+      continue;
+    }
+    if (ratingTags.has(tag)) {
+      ratingTag = tag;
+      continue;
+    }
+    requiredTags.push(tag);
+  }
+
+  if (typeTag) requiredTags.push(typeTag);
+  if (ratingTag) requiredTags.push(ratingTag);
+  if (singleGenreTag) requiredTags.push(String(singleGenreTag).trim());
+
+  return {
+    query_type: mapLocalQueryTypeToSteamApi(params.query_type),
+    page: Math.max(1, parseInt(params.page) || 1),
+    numperpage: Math.max(1, Math.min(100, parseInt(params.numperpage) || 30)),
+    appid: parseInt(params.appid) || 431960,
+    search_text: String(params.search_text || '').trim(),
+    days: parseInt(params.days) || 0,
+    requiredTags
+  };
+}
+
+async function queryWorkshopBySteamApi(apiKey, params, genreOr) {
+  const genreList = Array.from(new Set((genreOr || []).map(x => String(x || '').trim()).filter(Boolean)));
+  const needMultiGenre = genreList.length > 1;
+  const effectiveGenres = needMultiGenre ? genreList : [genreList[0] || ''];
+  const mergedIds = [];
+  const seen = new Set();
+  const mergedDetailMap = {};
+  let total = 0;
+
+  for (const g of effectiveGenres) {
+    const q = buildSteamApiQueryFields(params, g);
+    const search = new URLSearchParams();
+    search.set('key', apiKey);
+    search.set('appid', String(q.appid));
+    search.set('query_type', String(q.query_type));
+    search.set('page', String(q.page));
+    search.set('numperpage', String(q.numperpage));
+    search.set('return_tags', 'true');
+    search.set('return_preview_url', 'true');
+    search.set('return_short_description', 'true');
+    search.set('return_metadata', 'true');
+    search.set('return_vote_data', 'true');
+    search.set('match_all_tags', 'true');
+    if (q.search_text) search.set('search_text', q.search_text);
+    if (q.days > 0) search.set('days', String(q.days));
+    q.requiredTags.forEach((tag, i) => search.set(`requiredtags[${i}]`, tag));
+
+    const url = `https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/?${search.toString()}`;
+    const raw = await GET(url, { 'Accept': 'application/json' }, 22000);
+    const data = JSON.parse(raw.toString('utf8'));
+    const resp = data && data.response ? data.response : {};
+    const details = Array.isArray(resp.publishedfiledetails) ? resp.publishedfiledetails : [];
+    const oneIds = Array.isArray(resp.publishedfileids) && resp.publishedfileids.length
+      ? resp.publishedfileids.map(v => String(v))
+      : details.map(d => String(d && d.publishedfileid || '')).filter(Boolean);
+    const count = parseInt(resp.total || 0) || 0;
+    if (count > total) total = count;
+    details.forEach(d => {
+      if (!d || !d.publishedfileid || d.result !== 1) return;
+      mergedDetailMap[String(d.publishedfileid)] = d;
+    });
+
+    for (const id of oneIds) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      mergedIds.push(id);
+    }
+  }
+
+  return { ids: mergedIds, totalCount: total, detailMap: mergedDetailMap };
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  Main Query: Scrape IDs → GetPublishedFileDetails → respond
 // ─────────────────────────────────────────────────────────────────
@@ -834,20 +941,57 @@ async function handleQuery(req, res) {
     };
 
     const hasGenreOr = genreOr.length > 1;
+    const steamApiKey = getSteamApiKey();
+    const useSteamApi = !!steamApiKey && !!VIDEO_CACHE_SETTINGS.useSteamApi;
     if (!hasGenreOr) {
-      const { ids, totalCount, hints } = await scrapeIds(params);
+      let sourceData = useSteamApi
+        ? Object.assign({ hints: {} }, await queryWorkshopBySteamApi(steamApiKey, params, genreOr))
+        : await scrapeIds(params);
+      if (useSteamApi && (!sourceData.ids || !sourceData.ids.length)) {
+        console.warn('[Query] SteamAPI returned empty list, fallback to scrapeIds');
+        sourceData = await scrapeIds(params);
+      }
+      const { ids, totalCount, hints, detailMap: apiDetailMap } = sourceData;
       if (!ids.length) {
         return jsonRes(res, 200, { response: { publishedfiledetails: [], total: 0 } });
       }
       let details = [];
-      try { details = await getFileDetailsSafe(ids); }
-      catch (err) { console.warn('[FileDetails Error]', err.message); }
+      if (!useSteamApi || !apiDetailMap || !Object.keys(apiDetailMap).length) {
+        try { details = await getFileDetailsSafe(ids); }
+        catch (err) { console.warn('[FileDetails Error]', err.message); }
+      } else {
+        details = ids.map(id => apiDetailMap[id]).filter(Boolean);
+      }
       const detailMap = {};
       details.forEach(d => { if (d && d.publishedfileid) detailMap[d.publishedfileid] = d; });
       const items = ids.map(id => mapItem(id, detailMap[id], (hints && hints[id]) || {}));
       const total = totalCount > 0 ? totalCount : (ids.length >= numperpage ? 50000 : ids.length);
       console.log(`[Query] Returning ${items.length} items, total=${total}`);
       return jsonRes(res, 200, { response: { publishedfiledetails: items, total, total_count: items.length } });
+    }
+
+    if (useSteamApi) {
+      let apiData = await queryWorkshopBySteamApi(steamApiKey, params, genreOr);
+      if (!apiData.ids.length) {
+        console.warn('[Query] SteamAPI Genre OR returned empty list, fallback to scrapeIds');
+        apiData = Object.assign({ detailMap: {} }, await scrapeIds(params));
+      }
+      if (!apiData.ids.length) {
+        return jsonRes(res, 200, { response: { publishedfiledetails: [], total: 0 } });
+      }
+      let details = [];
+      if (apiData.detailMap && Object.keys(apiData.detailMap).length) {
+        details = apiData.ids.map(id => apiData.detailMap[id]).filter(Boolean);
+      } else {
+        try { details = await getFileDetailsSafe(apiData.ids); }
+        catch (err) { console.warn('[FileDetails Error]', err.message); }
+      }
+      const detailMap = {};
+      details.forEach(d => { if (d && d.publishedfileid) detailMap[d.publishedfileid] = d; });
+      const matched = apiData.ids.map(id => mapItem(id, detailMap[id], {})).slice(0, numperpage);
+      const total = apiData.totalCount > 0 ? apiData.totalCount : 50000;
+      console.log(`[Query] SteamAPI Genre OR(${genreOr.length}) returning ${matched.length}, total=${total}`);
+      return jsonRes(res, 200, { response: { publishedfiledetails: matched, total, total_count: matched.length } });
     }
 
     const matched = [];
@@ -1377,8 +1521,9 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
   // 只有匿名下载才使用临时目录
   const useSharedDir = (isPersistent && user) || (user && pass);
   const tempRoot = useSharedDir 
-    ? STEAM_CONFIG_DIR 
+    ? STEAM_CONFIG_DIR
     : fs.mkdtempSync(path.join(os.tmpdir(), 'wallhub-steamcmd-'));
+  if (useSharedDir) ensureDir(tempRoot);
   
   let itemDir = path.join(tempRoot, 'steamapps', 'workshop', 'content', String(appId), String(publishedFileId));
   const attempts = [];
@@ -2190,19 +2335,35 @@ const server = http.createServer(async (req, res) => {
       await handleVideoStream(req, res, id); return;
     }
     if (pn==='/api/video/cache/settings' && req.method==='GET') {
-      jsonRes(res, 200, VIDEO_CACHE_SETTINGS); return;
+      jsonRes(res, 200, {
+        cacheDays: VIDEO_CACHE_SETTINGS.cacheDays,
+        steamApiKey: VIDEO_CACHE_SETTINGS.steamApiKey || '',
+        useSteamApi: !!VIDEO_CACHE_SETTINGS.useSteamApi
+      }); return;
     }
     if (pn==='/api/video/cache/settings' && req.method==='POST') {
       try {
         const body = await readBody(req);
         const data = JSON.parse(body);
-        if (data.cacheDays && typeof data.cacheDays === 'number' && data.cacheDays >= 1 && data.cacheDays <= 365) {
+        if (typeof data.cacheDays === 'number') {
+          if (data.cacheDays < 1 || data.cacheDays > 365) {
+            return jsonRes(res, 400, { error: 'Invalid cacheDays value' });
+          }
           VIDEO_CACHE_SETTINGS.cacheDays = data.cacheDays;
-          saveCacheSettings();
-          jsonRes(res, 200, { success: true, cacheDays: VIDEO_CACHE_SETTINGS.cacheDays });
-        } else {
-          jsonRes(res, 400, { error: 'Invalid cacheDays value' });
         }
+        if (Object.prototype.hasOwnProperty.call(data, 'steamApiKey')) {
+          VIDEO_CACHE_SETTINGS.steamApiKey = String(data.steamApiKey || '').trim();
+        }
+        if (Object.prototype.hasOwnProperty.call(data, 'useSteamApi')) {
+          VIDEO_CACHE_SETTINGS.useSteamApi = !!data.useSteamApi;
+        }
+        saveCacheSettings();
+        jsonRes(res, 200, {
+          success: true,
+          cacheDays: VIDEO_CACHE_SETTINGS.cacheDays,
+          steamApiKey: VIDEO_CACHE_SETTINGS.steamApiKey || '',
+          useSteamApi: !!VIDEO_CACHE_SETTINGS.useSteamApi
+        });
       } catch (e) {
         jsonRes(res, 400, { error: 'Invalid JSON' });
       }
