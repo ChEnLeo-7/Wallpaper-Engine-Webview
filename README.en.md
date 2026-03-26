@@ -58,9 +58,9 @@ The original project's features are not repeated here:
 <img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5e47fc7e-d979-48d1-adb9-966c0b5dcc77" />
 <img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5ee3adba-31e9-42c3-bad1-46b3703c0722" />
 </br></br>
-<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/9193144f-783f-42b0-8760-58994192e6aa" />
-<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/3862613b-048a-48aa-a499-2b8e069a2538" />
-<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/5d0e0b19-b2fb-4ef5-855a-599c44015006" />
+<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/9193144f-783f-42b0-8760-58994192e6aa" />
+<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/3862613b-048a-48aa-a499-2b8e069a2538" />
+<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/5d0e0b19-b2fb-4ef5-855a-599c44015006" />
 </br></br>
 
 ## Technical Architecture
