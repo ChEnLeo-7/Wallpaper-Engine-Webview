@@ -1,6 +1,6 @@
-# Wallpaper Engine Workshop Downloader
+# Wallpaper Engine Workshop Download Tool
 
-> Download Wallpaper Engine workshop wallpapers without login, with Steam account support and online video playback.
+> Download Wallpaper Engine workshop wallpapers without logging in, with support for Steam account login and online video playback.
 
 <p align="center">
   <a href="./README.en.md">English</a>
@@ -8,12 +8,16 @@
   <a href="./README.md">简体中文</a>
 </p>
 
-## About This Fork
+## Notes on Modified Version
 
-This project is forked from [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web), with personalized features added using AI programming. It has been tested on FNOS Docker and Windows, with possible minor issues. Note that some content below is AI-generated, and there may be small bugs, but they don't affect basic usage.
+Referenced projects:
+https://github.com/0ran/wallpaper-engine-download-web  
+https://github.com/TulpaMavis/wallpaper-engine-download-web
 
-### Original Author's Note:
-Note: Depending on user activity, video download may be the only option retained in the future if necessary. Otherwise, the current state will be maintained. [This project is for emergency entertainment use only and should not be considered a reason for piracy]
+This project is forked from the upstream project [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web). Using AI programming, I've added some personalized features to meet my own needs. It has been tested on FNOS Docker and Windows, though there may be some minor omissions. Please note that some sections below are AI-generated, and there are still some incomplete parts and small bugs, but they do not significantly affect usability.
+
+### Original Author's Statement:
+Note: Depending on how aggressively users utilize this tool, if necessary, only the video download option may be retained in the future. Otherwise, it will remain as is. 【This project is intended for emergency entertainment use only and should not be considered a reason for cracking.】
 
 ## Project Badges
 
@@ -24,7 +28,7 @@ Note: Depending on user activity, video download may be the only option retained
 [![frontend](https://img.shields.io/badge/frontend-Vanilla%20JS-f7df1e?style=flat-square&logo=javascript&logoColor=000)](https://developer.mozilla.org/docs/Web/JavaScript)
 [![dependency](https://img.shields.io/badge/dependency-zero-0ea5e9?style=flat-square)](https://nodejs.org/docs/latest/api/)
 
-## Tech Stack
+## Technology Stack
 
 <p>
   <a href="https://nodejs.org/" target="_blank" rel="noopener noreferrer"><img src="https://skillicons.dev/icons?i=nodejs" alt="Node.js" /></a>
@@ -32,49 +36,50 @@ Note: Depending on user activity, video download may be the only option retained
   <a href="https://developer.mozilla.org/" target="_blank" rel="noopener noreferrer"><img src="https://skillicons.dev/icons?i=js,html,css" alt="JavaScript, HTML, CSS" /></a>
 </p>
 
-## Project Overview
+## Project Introduction
 
-This is a web-based Steam Workshop download tool designed specifically for Wallpaper Engine. It provides wallpaper search, online playback, and download functionality through a web interface.
+This project is a web-based Steam Workshop download tool designed specifically for Wallpaper Engine. It provides wallpaper search, online playback, and download functionality through a web interface.
 
-**Core Advantage**: Leverages **SteamCMD's** anonymous login feature to download most public wallpaper resources without logging into a personal Steam account. (Author's note: In practice, anonymous download doesn't work for most items, so logging into a Steam account is recommended 😅)
+**Core Advantage**: Leveraging SteamCMD's anonymous login feature, most public wallpaper resources can be downloaded without logging into a personal Steam account. (Author's note: In practice, anonymous downloads often fail for many items; logging in with a Steam account is recommended 😅)
 
-## Fork Features
+## Modified Features
 
-- **Steam Account Login**: Web-based Steam login to download restricted wallpapers
-- **Online Video Playback**: Video wallpapers can be played directly in browser without download (cached on server)
-- **Persistent Login**: Login once, auto-restore on restart, no repeated password entry (seems to have issues)
-- **Auto-packaging Rules**:
-  - **Scene/Application/Web wallpapers**: Auto-packaged as `.zip` after download
-  - **Video wallpapers**: Direct extraction of original video files (.mp4, etc.), playable immediately
-- **Zero Dependencies**: Uses only Node.js native modules, no `npm install` needed, ready to use
+The original project's features are not repeated here:
+
+- **Steam Web Account Login**: Supports logging into a Steam account directly on the webpage, including email verification codes, to download wallpapers that require permissions
+- **Steam API Support**: Supports entering and saving your own Steam API key; click the button to enable it, and after refreshing the list, you'll get access to the complete wallpaper list
+- **Online Video Playback**: Video wallpapers can be played directly in the browser; the viewing device doesn't need to download them (the server downloads and streams them to the client for playback; cache can be cleared)
+- **Automatic Packaging Rules**:
+  - **Scene/Application/Web wallpapers**: Automatically packaged as `.zip` archives after download
+  - **Video wallpapers**: Original video files (e.g., .mp4) are extracted directly for immediate playback
 
 ## Screenshots
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/2d18b9bf-e4c0-4c89-9749-09eb00c0ffb1" />
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/9ddaea0f-b8a5-4ca5-b62b-824384b8194b" />
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/b8b09a80-4d0e-4d12-b664-537b6c7ce0b0" />
-<img width="1920" height="954" alt="image" src="https://github.com/user-attachments/assets/6caeb577-1585-44a7-9e1b-9dfce8357303" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/1d1699ac-7530-44a0-8209-350f1628f52c" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/c53e2283-583d-4d16-8ec6-d87e09d96a69" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/5486d689-658d-498d-9c08-febd6fe2d40a" />
-<img width="439" height="957" alt="image" src="https://github.com/user-attachments/assets/4d39e199-6012-4de6-866c-94fd8ee5dd41" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/cd5843fe-7bf5-4cc7-9966-0cd8f42bdbeb" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5e47fc7e-d979-48d1-adb9-966c0b5dcc77" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5ee3adba-31e9-42c3-bad1-46b3703c0722" />
+</br></br>
+<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/9193144f-783f-42b0-8760-58994192e6aa" />
+<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/3862613b-048a-48aa-a499-2b8e069a2538" />
+<img width="443" height="957" alt="image" src="https://github.com/user-attachments/assets/5d0e0b19-b2fb-4ef5-855a-599c44015006" />
+</br></br>
 
 ## Technical Architecture
 
-- **Runtime Environment**: Node.js (>=16)
-- **Core Downloader**: [SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD) (Valve's official command-line tool)
-- **Frontend**: Vanilla JavaScript (no framework)
+- **Runtime**: Node.js (>=16)
+- **Core Downloader**: [SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD) (Valve official command-line tool)
+- **Frontend**: Vanilla JavaScript (no frameworks)
 - **Backend**: Node.js native `http` module
 - **Video Playback**: HTML5 Video API + Range request support
 
 ## Prerequisites
 
-1. **Node.js**: Ensure Node.js (v16 or higher) is installed
-2. **Network Access (region-dependent)**: Proxy requirement depends on your network environment. If you can directly access Steam Workshop, no proxy is needed; if access is restricted, enable system proxy or configure proxy environment variables
-3. **SteamCMD**: The program will automatically try to find or download SteamCMD on startup. If it fails, check your network or manually download SteamCMD to the `steamcmd` directory
+1. **Node.js**: Ensure Node.js (v16 or higher) is installed on your device
+2. **Network Access (varies by region)**: Whether a proxy is needed depends on your network environment. If you have direct access to Steam Workshop in your region, no proxy is needed; if access is restricted, enable a system proxy or configure proxy environment variables
+3. **SteamCMD**: The program will automatically attempt to locate or download SteamCMD on startup. If this fails, please check your network or manually download SteamCMD and place it in the `steamcmd` directory
 
 ## Quick Start
 
-`PS`: **First-time use requires online SteamCMD download. Click the user icon in the top right corner and enter your account credentials to trigger the download**
+`PS`: **The first time you use it, you need to download SteamCMD online. Click the user icon in the top right corner of the webpage and enter your account credentials to trigger the download.**
 
 ### Windows
 
@@ -87,13 +92,13 @@ This is a web-based Steam Workshop download tool designed specifically for Wallp
    # Recommended: Enable manual garbage collection (optimizes memory management)
    node --expose-gc server.js
    ```
-3. **Access the web interface**: Open `http://localhost:3090` in your browser
+3. **Access the webpage**: Open `http://localhost:3090` in your browser
 
 ### Docker Deployment
 
-1. Download the complete project code and create a `node_server_data` folder in your deployment path
-2. Place all project files in the `node_server_data` folder
-3. Create `dockerfile` and `docker-compose.yml` files in the parent folder of `node_server_data` with the following content
+1. Download the complete project code and create a folder named `node_server_data` in your deployment path
+2. Place all project files inside the `node_server_data` folder
+3. In the parent folder of `node_server_data`, create new files `dockerfile` and `docker-compose.yml`, and add the following content respectively
 
 **Dockerfile**
 
@@ -132,8 +137,8 @@ ENV PATH="${STEAMCMD_DIR}:${PATH}"
 # Set working directory (can be overridden by docker-compose)
 WORKDIR /app
 
-# Don't copy any Node code, run entirely through mounting
-# Only install global tools (optional)
+# Do not copy any Node code; run entirely via mount
+# Install global tools (optional)
 RUN npm install -g nodemon pm2 2>/dev/null || true
 
 # Expose port (can be overridden by docker-compose)
@@ -142,9 +147,8 @@ EXPOSE 3090
 # Default command, can be overridden by docker-compose
 CMD ["node", "--expose-gc", "server.js"]
 ```
-
 **docker-compose.yml**
-```yaml
+```docker-compose
 version: '3.8'
 
 services:
@@ -165,13 +169,13 @@ services:
       # - STEAM_USERNAME=your_username
       # - STEAM_PASSWORD=your_password
     volumes:
-      # Mount project files path
+      # Path to mount project files
       - ./node_server_data:/app
-      # Mount SteamCMD data directory (for Steam data persistence)
+      # Mount SteamCMD data directory (for persistent Steam data)
       - ./steamcmd_data:/root/Steam
     # Working directory
     working_dir: /app
-    # Startup command (override CMD in Dockerfile if needed)
+    # Startup command (to override CMD in Dockerfile if needed)
     command: node --expose-gc server.js
     # Or use nodemon for development
     # command: nodemon --expose-gc server.js
@@ -186,166 +190,43 @@ networks:
 ```
 
 4. Run the build command:
-    ```bash
+    ```
     docker-compose up -d
     ```
-   Or if you have a graphical NAS interface, manually select the path containing the dockerfile and docker-compose in the web interface
+   If you're using a graphical NAS interface, manually select the path containing the dockerfile and docker-compose via the web interface
+   
+5. **Access the webpage**: Open `http://localhost:3090` in your browser
 
-5. **Access the web interface**: Open `http://localhost:3090` in your browser
-
-**Important**: You must mount the `/root/Steam` directory to enable login state persistence!
+**Important Note**: Mounting the `/root/Steam` directory is essential for login state persistence!
 
 ## Features
 
 ### 1. Steam Account Login
 
 #### How to Use
-1. Click the user icon button in the top right corner
-2. Enter Steam username, password, and Steam Guard code (if Steam mobile authentication is enabled, check the mobile Steam app to approve the login request)
+1. Click the user icon button in the top right corner of the page
+2. Enter your Steam username, password, and Steam Guard verification code (if Steam Guard is enabled, check your mobile Steam app to approve the login request)
 3. Click the "Login" button
-4. After successful login, the button turns green showing logged-in status
-
-#### Persistent Login (feature questionable)
-- After successful login, credentials are automatically saved to the `/root/Steam` directory
-- Login state auto-restores after service restart, no password re-entry needed
-- Reuses logged-in session for downloads and video playback, no repeated logins
-- **No mobile Steam login verification requests**
+4. After successful login, the button turns green, indicating a logged-in status
 
 #### Logout
 - Click the green user icon button
-- After confirming logout, login state and persistent files are cleared
-
-### 2. Online Video Playback
-
-#### How to Use
-1. Select "Video" type in the filter
-2. Click a video wallpaper card to open details
-3. Click the green "Play Video Online" button
-4. Video player opens automatically and starts playing (first play may take a while, check server logs for details)
-
-#### Technical Features
-- Supports HTTP Range requests, seekable progress bar
-- Video caching mechanism, played videos don't need re-download
-- Supports multiple video formats: MP4, WebM, AVI, WMV, MKV, MOV, etc.
-- Uses HTML5 native player, supports fullscreen, volume control, etc.
-
-### 3. Video Cache Management
-
-#### Set Cache Days
-1. Click the settings button (gear icon) in the top right
-2. Set cache days in "Video Cache Settings" (default 7 days)
-3. Cache files older than the set days are automatically cleaned
-
-#### Manual Cache Cleanup
-1. Open settings panel
-2. Click "Clear Cached Workshop Items Now" button
-3. After confirmation, all cached video files are cleared (clears all workshop file cache in `/root/Steam/steamapps/431960/` directory)
+- Confirm logout to clear login status and persistent files
 
 ## Advanced Configuration
 
 You can adjust tool behavior by setting environment variables:
 
-| Environment Variable | Description | Default |
+| Environment Variable | Description | Default Value |
 |----------|-------------|---------|
 | `PORT` | Service port | `3090` |
-| `HTTP_PROXY` | Proxy address (e.g., `http://127.0.0.1:7890`) | Auto-read system proxy |
-| `STEAM_CONFIG_DIR` | Steam config directory | `/root/Steam` |
-| `STEAM_USERNAME` | Steam account (env login) | - |
+| `HTTP_PROXY` | Proxy address (e.g., `http://127.0.0.1:7890`) | Automatically reads system proxy |
+| `STEAM_CONFIG_DIR` | Steam configuration directory | `/root/Steam` |
+| `STEAM_USERNAME` | Steam account (environment variable login) | - |
 | `STEAM_PASSWORD` | Steam password | - |
-| `STEAM_COUNTRY` | Store region code | - |
+| `STEAM_COUNTRY` | Store country code | - |
 | `STEAM_LANG` | Language setting | `schinese` |
-
-## API Endpoints
-
-### Steam Login Related
-- `POST /api/steam/login` - Login to Steam account
-- `POST /api/steam/logout` - Logout
-- `GET /api/steam/status` - Query login status
-
-### Video Playback Related
-- `GET /api/video/stream?id=<id>` - Video stream endpoint
-- `POST /api/video/cache/clear` - Clear video cache
-- `GET /api/video/cache/settings` - Get cache settings
-- `POST /api/video/cache/settings` - Update cache settings
-
-### Wallpaper Download Related
-- `POST /api/steam/query` - Query wallpaper list
-- `GET /api/steam/details?id=<id>` - Get wallpaper details
-- `GET /api/download?id=<id>&title=<title>` - Download wallpaper
-
-## Usage Tips
-
-### Login State Persistence
-```
-First login → Credentials saved to /root/Steam → Service restart → Auto-restore login
-```
-
-### Avoid Repeated Logins
-```
-Persistent login → Reuse session for downloads → No password needed → No Steam Guard trigger
-```
-
-### Video Cache Optimization
-```
-First play → Download and cache → Subsequent plays → Use cache directly → Fast loading
-```
-
-## Troubleshooting
-
-### Issue 1: Login state lost after service restart
-**Solution**:
-- Ensure Docker container has `/root/Steam` directory mounted
-- Check if `/root/Steam/config/loginusers.vdf` file exists
-
-### Issue 2: Mobile verification request during download
-**Solution**:
-- Confirm web login completed
-- Check logs to confirm using `persistent login`
-- Verify using shared directory (`shared dir: true`)
-
-### Issue 3: Video won't play
-**Solution**:
-- Check network connection
-- Review error messages in server logs
-- Try clearing cache and replaying
-
-### Issue 4: Video cache taking too much space
-**Solution**:
-- Adjust cache days in settings
-- Use "Clear Cache Now" function
-- Manually delete workshop cache files in `/steamapps/431960/` directory
-
-## Changelog
-
-### v4.3.0 (Latest)
-- ✅ Fixed: Login state lost after web login and service restart
-- ✅ Fixed: Repeated login triggers during download
-- ✅ Fixed: Repeated Steam login requests on mobile
-- ✅ Added: Video cache days setting
-- ✅ Added: Manual cache clear function
-- ✅ Optimized: Use shared directory to reuse Steam session
-- ✅ Optimized: Clear persistent files on logout
-- ✅ Optimized: Video auto-play function
-- ✅ Updated: Settings button icon style
-
-### v2.1.0
-- ✨ Added: Steam account login feature
-- ✨ Added: Online video playback feature
-- 🎨 Optimized: UI/UX design
-- 📝 Improved: Documentation
-
-### v2.0.0
-- Basic download functionality
-- Wallpaper browsing and search
-- Multi-language support
-
-## Security Notes
-
-1. **Password Not Stored**: After persistent login, password is immediately cleared from memory
-2. **Session Reuse**: Uses Steam's official session mechanism, safe and reliable
-3. **Local Verification**: All operations completed in local environment
-4. **Auto Backup**: Config files automatically backed up on logout
 
 ## Development Statement
 
-This project was built entirely with AI assistance. The publisher did not review or write any line of code; any similarity to other projects is coincidental. For learning and communication only.
+This project was entirely built with the assistance of artificial intelligence. The publisher has not reviewed or written any line of code; any code similarities with other projects are purely coincidental. For learning and communication purposes only.
