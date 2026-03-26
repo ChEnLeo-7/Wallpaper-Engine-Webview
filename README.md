@@ -11,7 +11,7 @@
 ## 关于二改作者的话
 
 参考的项目：
-https://github.com/0ran/wallpaper-engine-download-web
+https://github.com/0ran/wallpaper-engine-download-web  
 https://github.com/TulpaMavis/wallpaper-engine-download-web
 
 此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，可能稍有遗漏。注意，下面部分内容为 AI 编写，注意目前仍有一些未完善和小 BUG，但基本不影响使用
