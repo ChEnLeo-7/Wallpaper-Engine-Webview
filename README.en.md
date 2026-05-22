@@ -228,4 +228,3 @@ You can adjust tool behavior by setting environment variables:
 ## Development Statement
 
 This project was entirely built with AI assistance. The publisher has not reviewed or written a single line of code content; if there are code similarities with other projects, it's because I copied them. For learning and communication purposes only.
-```
