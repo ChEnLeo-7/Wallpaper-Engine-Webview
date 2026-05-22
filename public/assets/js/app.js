@@ -1,4 +1,4 @@
-const APPID = 431960, PAGE_SIZE = 30;
+﻿const APPID = 431960, PAGE_SIZE = 30;
 const PROXY_DOMAINS = ['steamcommunity.com', 'api.steampowered.com', 'steamusercontent.com'];
 const PREFS_KEY = 'wallhub-prefs-v1';
 
@@ -19,8 +19,8 @@ const I18N = {
     usageBtn: '说明',
     sortLabel: '排序依据',
     sortTrend: '最热门',
-    sortMostRecent: '最新',
-    sortLastUpdated: '最后更新',
+    sortMostRecent: '最近',
+    sortMostVotes: '最多投票',
     sortMostSubs: '最多订阅',
     daysLabel: '时间排序',
     day1: '今天',
@@ -52,12 +52,12 @@ const I18N = {
     listView: '列表',
     commentsTitle: '💬 用户留言',
     loadingComments: '加载留言中...',
-    subDownload: '订阅 / 下载壁纸',
+    subDownload: '订阅 / 下载到本地',
     steamPage: 'Steam页面',
     usageTitle: '使用说明',
     usageIntro: '此项目不需要登陆Steam账号，即可下载 wallpaper engine 所有壁纸项目。',
     usageLimit: '<b>访问限制：</b><br>网络访问能力因地区与运营商而异。若可直连 Steam 创意工坊则无需代理；若访问受限，请开启系统代理后使用。',
-    usagePack: '<b>下载与打包规则：</b><br>场景类 / 页面类 / 程序类壁纸：下载后自动打包为 .zip 压缩文件，需解压后访问；<br>视频类壁纸：仅下载原始视频文件，无压缩打包流程，下载后可直接播放。',
+    usagePack: '<b>下载与打包规则：</b><br>所有壁纸类型都可直接下载到客户端；<br>后台下载仅用于将文件保存到服务端本地供后续管理。',
     usageDev: '<b>开发说明：</b><br>本项目全程依托人工智能辅助完成构建，发布者未审阅、未编写任何一行代码内容，若与其他项目存在代码雷同，均属巧合。',
     usageNote: '本工具并非用于规避 Wallpaper Engine 正版购买权益，严格遵循非商用、个人自用的使用场景。',
     disclaimerText: '免责声明：本项目在人工智能辅助下完成开发与整理，发布者未逐行人工审阅或手写核心代码；若与其他项目存在相似实现，可能属于技术方案趋同。项目仅供学习交流，请勿用于商业用途或侵权场景。',
@@ -103,7 +103,17 @@ const I18N = {
     downloadFailed: '工坊项目下载失败: {msg}',
     btnDownloaded: '已下载',
     btnFailed: '失败',
-  },
+
+    playVideo: '播放视频',
+    watchLater: '稍后再看',
+    videoPreparing: '视频准备中...',
+    videoOpening: '视频打开中...',
+    videoWaitingTitle: '视频等待',
+    videoWaitingDesc: '视频正在等待加载...',
+    videoQueuedTip: '视频已加入播放队列',
+    videoNotReady: '视频暂不可用',
+    playFailed: '播放失败: {msg}',
+    close: '关闭',  },
   en: {
     docTitle: 'WE · Steam Workshop Wallpapers',
     searchPlaceholder: 'Search wallpapers...',
@@ -114,7 +124,7 @@ const I18N = {
     sortLabel: 'Sort By',
     sortTrend: 'Trending',
     sortMostRecent: 'Most Recent',
-    sortLastUpdated: 'Last Updated',
+    sortMostVotes: 'Most Votes',
     sortMostSubs: 'Most Subscribed',
     daysLabel: 'Time Range',
     day1: 'Today',
@@ -146,7 +156,7 @@ const I18N = {
     listView: 'List',
     commentsTitle: '💬 Comments',
     loadingComments: 'Loading comments...',
-    subDownload: 'Subscribe / Download',
+    subDownload: 'Subscribe / Download locally',
     steamPage: 'Steam Page',
     usageTitle: 'Usage',
     usageIntro: 'This project can download most Wallpaper Engine workshop items without logging into a Steam account.',
@@ -197,6 +207,16 @@ const I18N = {
     downloadFailed: 'Workshop download failed: {msg}',
     btnDownloaded: 'Downloaded',
     btnFailed: 'Failed',
+    playVideo: 'Play Video',
+    watchLater: 'Watch Later',
+    videoPreparing: 'Preparing video cache...',
+    videoOpening: 'Cache ready, opening player...',
+    videoWaitingTitle: 'Caching Video',
+    videoWaitingDesc: 'Please wait while server downloads and caches the video.',
+    videoQueuedTip: 'Added to cache queue. Check progress in queue list.',
+    videoNotReady: 'Video is still caching. Please try again later.',
+    playFailed: 'Play failed: {msg}',
+    close: 'Close',
   }
 };
 
@@ -223,6 +243,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   setupEvents();
   applyStateToControls();
   syncFiltersFromControls();
+  loadServerRuntime();
   checkSteamLoginStatus();
   load();
 });
@@ -307,7 +328,7 @@ function applyLanguage(){
   if (sortSel) {
     sortSel.options[0].text = t('sortTrend');
     sortSel.options[1].text = t('sortMostRecent');
-    sortSel.options[2].text = t('sortLastUpdated');
+    sortSel.options[2].text = t('sortMostVotes');
     sortSel.options[3].text = t('sortMostSubs');
   }
   const daysSel = document.getElementById('daysSel');
@@ -353,6 +374,10 @@ function applyLanguage(){
   if (cmtSpin) cmtSpin.innerHTML = `<div class="spinner-sm"></div>${t('loadingComments')}`;
   const mSubBtn = document.getElementById('mSubBtn');
   if (mSubBtn) setFirstTextNode(mSubBtn, t('subDownload'));
+  const mPlayBtn = document.getElementById('mPlayBtn');
+  if (mPlayBtn) setFirstTextNode(mPlayBtn, currentLang === 'zh' ? '播放视频' : t('playVideo'));
+  const mWatchLaterBtn = document.getElementById('mWatchLaterBtn');
+  if (mWatchLaterBtn) setFirstTextNode(mWatchLaterBtn, currentLang === 'zh' ? '稍后再看' : t('watchLater'));
   const mSteam = document.getElementById('mSteam');
   if (mSteam) setFirstTextNode(mSteam, t('steamPage'));
   const usageTitle = document.querySelector('.usage-title');
@@ -367,15 +392,12 @@ function applyLanguage(){
   if (usageNote) usageNote.textContent = t('usageNote');
   const siteDisclaimerText = document.getElementById('siteDisclaimerText');
   if (siteDisclaimerText) siteDisclaimerText.textContent = t('disclaimerText');
-  applyTheme(document.body.classList.contains('theme-light') ? 'light' : 'dark');
 }
 
 function setupEvents(){
   document.getElementById('searchInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
   document.getElementById('searchBtn').addEventListener('click', doSearch);
-  document.getElementById('usageBtn').addEventListener('click', openUsage);
   document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
-  document.getElementById('loginBtn').addEventListener('click', openLoginModal);
   document.getElementById('sortSel').addEventListener('change', e=>{ S.f.sort=e.target.value; S.page=1; syncDaysVisible(); savePrefs(); load(); });
   document.getElementById('daysSel').addEventListener('change', e=>{ S.f.days=e.target.value; S.page=1; savePrefs(); load(); });
   document.getElementById('typeSel').addEventListener('change', e=>{ S.f.type=e.target.value; S.page=1; savePrefs(); load(); });
@@ -420,7 +442,7 @@ function usageOvClick(e){ if(e.target===document.getElementById('usageOv')) clos
 
 function openSettingsModal(){
   updateSettingsCheckmarks();
-  refreshMemoryStatus(); // 刷新内存状态
+  loadServerRuntime();
   document.getElementById('settingsModalOv').classList.add('open');
   document.body.style.overflow='hidden';
 }
@@ -437,28 +459,33 @@ function updateSettingsCheckmarks(){
   const langEnCheck = document.querySelector('#langEn .settings-option-check');
   if(langZhCheck) langZhCheck.style.display = currentLang === 'zh' ? 'inline' : 'none';
   if(langEnCheck) langEnCheck.style.display = currentLang === 'en' ? 'inline' : 'none';
-  
-  // Update theme checkmarks
-  const isLight = document.body.classList.contains('theme-light');
-  const themeDarkCheck = document.querySelector('#themeDark .settings-option-check');
-  const themeLightCheck = document.querySelector('#themeLight .settings-option-check');
-  if(themeDarkCheck) themeDarkCheck.style.display = !isLight ? 'inline' : 'none';
-  if(themeLightCheck) themeLightCheck.style.display = isLight ? 'inline' : 'none';
-  
+
   // Load cache settings
   loadCacheSettings();
 }
 
+async function loadServerRuntime(){
+  const section = document.getElementById('serverSettingsSection');
+  if (!section) return;
+  section.style.display = 'none';
+  try {
+    const res = await fetch('/api/server/runtime');
+    if (!res.ok) return;
+    const data = await res.json();
+    section.style.display = data.canRestart ? '' : 'none';
+  } catch(e) {
+    section.style.display = 'none';
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────
-//  Video Cache Management Functions
+//  API Settings Management Functions
 // ─────────────────────────────────────────────────────────────────
 async function loadCacheSettings(){
   try {
     const res = await fetch('/api/video/cache/settings');
     if(res.ok){
       const data = await res.json();
-      const input = document.getElementById('cacheDaysInput');
-      if(input && data.cacheDays) input.value = data.cacheDays;
       const keyInput = document.getElementById('steamApiKeyInput');
       if(keyInput) keyInput.value = data.steamApiKey || '';
       steamApiEnabled = !!data.useSteamApi;
@@ -482,22 +509,12 @@ function toggleSteamApi(){
 }
 
 async function saveCacheSettings(){
-  const input = document.getElementById('cacheDaysInput');
   const keyInput = document.getElementById('steamApiKeyInput');
-  if(!input) return;
-  
-  const days = parseInt(input.value);
-  if(isNaN(days) || days < 1 || days > 365){
-    toast('请输入有效的天数 (1-365)', 'warn');
-    return;
-  }
-  
   try {
     const res = await fetch('/api/video/cache/settings', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        cacheDays: days,
         steamApiKey: keyInput ? keyInput.value.trim() : '',
         useSteamApi: steamApiEnabled
       })
@@ -510,73 +527,29 @@ async function saveCacheSettings(){
     }
   } catch(e){
     console.error('[Cache] Save failed:', e);
-    toast('保存缓存设置失败', 'warn');
+    toast('保存设置失败', 'warn');
   }
 }
 
-async function clearVideoCache(){
-  if(!confirm('确定要清除所有缓存的视频文件吗？此操作不可撤销。')){
-    return;
-  }
-  
+async function restartServer(){
+  const btn = document.getElementById('restartServerBtn');
+  const txt = document.getElementById('restartServerText');
+  if(!confirm(currentLang === 'en' ? 'Restart the server now?' : '确定要重启服务端吗？')) return;
+  const oldText = txt ? txt.textContent : '';
   try {
-    const res = await fetch('/api/video/cache/clear', {
-      method: 'POST'
-    });
-    
-    if(res.ok){
-      const data = await res.json();
-      toast(`已清除 ${data.deletedCount || 0} 个缓存文件`, 'ok');
-      // 刷新内存状态
-      refreshMemoryStatus();
-    } else {
-      throw new Error('清除失败');
-    }
-  } catch(e){
-    console.error('[Cache] Clear failed:', e);
-    toast('清除缓存失败', 'warn');
+    if(btn) btn.disabled = true;
+    if(txt) txt.textContent = currentLang === 'en' ? 'Restarting...' : '正在重启...';
+    const res = await fetch('/api/server/restart', { method: 'POST' });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    toast(data.message || (currentLang === 'en' ? 'Server is restarting' : '服务端正在重启'), 'ok');
+    setTimeout(() => { window.location.reload(); }, 3500);
+  } catch(e) {
+    if(btn) btn.disabled = false;
+    if(txt) txt.textContent = oldText || (currentLang === 'en' ? 'Restart server' : '重启服务端');
+    toast((currentLang === 'en' ? 'Restart failed: ' : '重启失败: ') + e.message, 'warn');
   }
 }
-
-async function refreshMemoryStatus(){
-  try {
-    const res = await fetch('/api/memory/status');
-    if(res.ok){
-      const data = await res.json();
-      document.getElementById('heapUsed').textContent = `${data.heapUsedMB} MB`;
-      document.getElementById('heapTotal').textContent = `${data.heapTotalMB} MB`;
-      document.getElementById('rssMemory').textContent = `${data.rssMB} MB`;
-      document.getElementById('videoCacheCount').textContent = `${data.videoCacheSize} / ${data.videoCacheLimit}`;
-    }
-  } catch(e){
-    console.error('[Memory] Failed to fetch status:', e);
-  }
-}
-
-async function triggerGarbageCollection(){
-  try {
-    const res = await fetch('/api/memory/gc', {
-      method: 'POST'
-    });
-    
-    if(res.ok){
-      const data = await res.json();
-      if(data.success){
-        toast(`已释放 ${data.freedMB} MB 内存`, 'ok');
-        refreshMemoryStatus();
-      } else {
-        toast(data.error || '垃圾回收失败', 'warn');
-      }
-    } else {
-      const data = await res.json();
-      toast(data.error || '垃圾回收不可用', 'warn');
-    }
-  } catch(e){
-    console.error('[Memory] GC failed:', e);
-    toast('垃圾回收失败', 'warn');
-  }
-}
-
 function doSearch(){
   S.f.search = document.getElementById('searchInput').value.trim();
   S.page = 1; load();
@@ -595,7 +568,7 @@ function restorePrefs(){
     const saved = JSON.parse(raw);
     if(saved && (saved.view === 'grid' || saved.view === 'list')) S.view = saved.view;
     if(saved && saved.f){
-      const allowedSort = ['trend','mostrecent','lastupdated','totaluniquesubscribers'];
+      const allowedSort = ['trend', 'mostrecent', 'mostvotes', 'totaluniquesubscribers'];
       const allowedDays = ['1','7','30','90','180','365','0'];
       const allowedType = ['', 'Scene', 'Video', 'Web', 'Application'];
       const allowedRating = ['', 'Everyone', 'Questionable', 'Mature'];
@@ -692,11 +665,20 @@ function buildParams(){
   const f = S.f;
   const params = {
     appid: APPID,
-    query_type: {trend:1,mostrecent:2,lastupdated:21,totaluniquesubscribers:16}[f.sort]||1,
+    query_type: {trend:1, mostrecent:2, mostvotes:11, totaluniquesubscribers:16}[f.sort]||1,
     page: S.page,
     numperpage: PAGE_SIZE,
   };
-  if(f.search) params.search_text = f.search;
+  
+  // 拦截搜索框中的 author: 语法，转为作者专属查询参数
+  if(f.search) {
+    if (f.search.trim().startsWith('author:')) {
+      params.creator = f.search.trim().split('author:')[1].trim();
+    } else {
+      params.search_text = f.search;
+    }
+  }
+
   if(f.days && f.sort==='trend' && f.days!=='0') params.days = parseInt(f.days);
 
   const tags=[];
@@ -711,6 +693,18 @@ function buildParams(){
   tags.forEach((t,i)=>{ params[`requiredtags[${i}]`]=t; });
 
   return params;
+}
+
+// 全局作者搜索跳转函数
+function searchByCreator(creatorId) {
+  if (!creatorId) return;
+  closeModal(); // 关闭详情弹窗
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) searchInput.value = 'author:' + creatorId;
+  S.page = 1;
+  S.f.search = 'author:' + creatorId;
+  savePrefs();
+  load(); // 触发搜索
 }
 
 async function load(){
@@ -854,9 +848,11 @@ function cardHtml(item, isL, idx){
       : type === 'App'
         ? t('typeApp')
         : t('typeScene');
-  const author = item.author || t('unknown');
+        
+  // 提取收藏量和文件大小数据
   const subs  = fmtN(item.subscriptions||item.lifetime_subscriptions||0);
-  const views = fmtN(item.views||0);
+  const favs  = fmtN(item.favorited||item.lifetime_favorited||0);
+  const size  = item.file_size ? fmtBytes(parseInt(item.file_size)) : t('unknown');
   const delay = Math.min(idx*25,400);
 
   return `
@@ -870,21 +866,18 @@ function cardHtml(item, isL, idx){
       <div class="card-title" title="${esc(title)}">${esc(title)}</div>
       <div class="card-meta">
         <div class="card-metrics">
-          <span class="cstat">
+          <span class="cstat" title="${t('statSubs')}">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
             ${subs}
           </span>
-          <span class="cstat">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            ${views}
+          <span class="cstat" title="${t('statFavs')}">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            ${favs}
           </span>
         </div>
-        <span class="card-author" title="${esc(author)}">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 21a8 8 0 0 0-16 0"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-          <span class="card-author-name">${esc(author)}</span>
+        <span class="card-author" title="${t('statSize')}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          <span class="card-author-name">${size}</span>
         </span>
       </div>
     </div>
@@ -901,19 +894,78 @@ function renderPagination(){
   const pg=document.getElementById('pgn'), cur=S.page, tot=S.totalPages;
   if(tot<=1){ pg.innerHTML=''; return; }
   let pages=[1];
-  if(cur>3) pages.push('…');
-  for(let i=Math.max(2,cur-1);i<=Math.min(tot-1,cur+1);i++) pages.push(i);
-  if(cur<tot-2) pages.push('…');
+  
+  // 当前页前后各展示 2 页
+  if(cur>4) pages.push('…');
+  for(let i=Math.max(2,cur-2);i<=Math.min(tot-1,cur+2);i++) pages.push(i);
+  if(cur<tot-3) pages.push('…');
   if(tot>1) pages.push(tot);
+  
   pg.innerHTML=`
     <button class="pbtn" onclick="goPage(${cur-1})" ${cur===1?'disabled':''}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>${t('prevPage')}</button>
     ${pages.map(p=>p==='…'
-      ?`<span class="pbtn" style="pointer-events:none;opacity:.4">…</span>`
+      // 省略号点击跳转页码
+      ?`<button class="pbtn" onclick="promptPageJump()" title="输入页码跳转">…</button>`
       :`<button class="pbtn ${p===cur?'cur':''}" onclick="goPage(${p})">${p}</button>`
     ).join('')}
     <button class="pbtn" onclick="goPage(${cur+1})" ${cur===tot?'disabled':''}>${t('nextPage')}<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>`;
 }
+
 function goPage(p){ if(p<1||p>S.totalPages||p===S.page) return; S.page=p; window.scrollTo({top:0,behavior:'smooth'}); load(); }
+
+// 手动输入页码跳转功能
+function promptPageJump(){
+  const ov = document.getElementById('jumpModalOv');
+  const input = document.getElementById('jumpPageInput');
+  const hint = document.getElementById('jumpPageHint');
+  const title = document.getElementById('jumpModalTitle');
+  const cancelBtn = document.getElementById('jumpCancelBtn');
+  const submitBtn = document.getElementById('jumpSubmitBtn');
+  
+  if(ov && input && hint){
+    // 支持中英文切换显示
+    title.textContent = currentLang === 'en' ? 'Jump to Page' : '跳转页码';
+    cancelBtn.textContent = currentLang === 'en' ? 'Cancel' : '取消';
+    submitBtn.textContent = currentLang === 'en' ? 'Go' : '跳转';
+    hint.textContent = currentLang === 'en' ? `Enter page (1 - ${S.totalPages})` : `请输入页码 (1 - ${S.totalPages})`;
+    
+    input.max = S.totalPages;
+    input.value = S.page;
+    ov.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    
+    // 延迟聚焦，防止弹窗动画打断输入
+    setTimeout(() => { input.focus(); input.select(); }, 100);
+    
+    // 支持直接按回车键跳转
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') submitPageJump();
+    };
+  }
+}
+
+// 关闭弹窗
+function closeJumpModal(){
+  const ov = document.getElementById('jumpModalOv');
+  if(ov) {
+    ov.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+}
+
+// 提交跳转
+function submitPageJump(){
+  const input = document.getElementById('jumpPageInput');
+  if(input){
+    const p = parseInt(input.value.trim());
+    if(!isNaN(p) && p >= 1 && p <= S.totalPages){
+      closeJumpModal();
+      goPage(p);
+    } else {
+      toast(currentLang === 'en' ? 'Invalid page number' : '无效的页码', 'warn');
+    }
+  }
+}
 
 function openModal(id){
   const item = S.items.find(w=>w.publishedfileid===id);
@@ -924,16 +976,33 @@ function openModal(id){
 
   const thumb = item.preview_url||'';
   document.getElementById('mTitle').textContent = item.title||t('untitled');
-  document.getElementById('mSub').innerHTML = `<span>🆔 ${id}</span><span>${t('authorLoading')}</span>`;
+  const cid = item.creator || '';
+  const authorHtml = cid 
+    ? `<span style="cursor:pointer; color:var(--accent); text-decoration:underline;" onclick="searchByCreator('${cid}')" title="搜TA的作品">${t('authorLoading')} 🔍</span>`
+    : `<span>${t('authorLoading')}</span>`;
+  document.getElementById('mSub').innerHTML = `<span>🆔 ${id}</span>${authorHtml}`;
   document.getElementById('mImg').src   = thumb||PLACEHOLDER;
   document.getElementById('mImg').style.display = '';
   document.getElementById('mDesc').textContent = item.short_description||t('loadingDesc');
   document.getElementById('mSteam').href = `https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`;
-  document.getElementById('mSubBtn').onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); closeModal(); dlWall(id, item.title); };
+  document.getElementById('mSubBtn').onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); clientDownloadWall(id, item.title); };
 
   const playBtn = document.getElementById('mPlayBtn');
-  if(playBtn){
-    playBtn.style.display = isVideo ? '' : 'none';
+  const watchLaterBtn = document.getElementById('mWatchLaterBtn');
+  const bgDownloadBtn = document.getElementById('mBgDownloadBtn');
+  if (playBtn && watchLaterBtn && bgDownloadBtn) {
+    if (isVideo) {
+      playBtn.style.display = '';
+      watchLaterBtn.style.display = '';
+      bgDownloadBtn.style.display = 'none';
+      playBtn.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); playVideoNow(id, item.title); };
+      watchLaterBtn.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); closeModal(); backgroundDownloadWall(id, item.title); };
+    } else {
+      playBtn.style.display = 'none';
+      watchLaterBtn.style.display = 'none';
+      bgDownloadBtn.style.display = '';
+      bgDownloadBtn.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); closeModal(); backgroundDownloadWall(id, item.title); };
+    }
   }
 
   renderStats({
@@ -958,7 +1027,14 @@ function openModal(id){
     .then(d=>{
       if(d.preview_url) document.getElementById('mImg').src=d.preview_url;
       document.getElementById('mDesc').textContent = d.description || item.short_description || (currentLang === 'en' ? 'No description available' : '暂无详细描述');
-      if(d.author) document.getElementById('mSub').innerHTML=`<span>🆔 ${id}</span><span>${currentLang === 'en' ? 'Author' : '作者'}: ${esc(d.author)}</span>`;
+      if(d.author || item.author) {
+        const finalCid = d.creator || item.creator || '';
+        const finalAuthor = esc(d.author || item.author || t('unknown'));
+        const aHtml = finalCid 
+          ? `<span style="cursor:pointer; color:var(--accent); text-decoration:underline;" onclick="searchByCreator('${finalCid}')" title="搜TA的作品">${currentLang === 'en' ? 'Author' : '作者'}: ${finalAuthor} 🔍</span>`
+          : `<span>${currentLang === 'en' ? 'Author' : '作者'}: ${finalAuthor}</span>`;
+        document.getElementById('mSub').innerHTML=`<span>🆔 ${id}</span>${aHtml}`;
+      }
       if(d.tags && d.tags.length) document.getElementById('mTags').innerHTML=d.tags.map(t=>`<span class="tag-chip">${esc(t)}</span>`).join('');
       renderStats({
         subs:  d.subscriptions || fmtN(item.subscriptions||0),
@@ -1011,54 +1087,155 @@ function closeModal(){
 }
 function mOvClick(e){ if(e.target===document.getElementById('mOv')) closeModal(); }
 
+
+let videoWaitTimer = null;
+
+function closeVideoWaitModal(){
+  const ov = document.getElementById('videoWaitOv');
+  if (ov) ov.remove();
+  if (videoWaitTimer) { clearInterval(videoWaitTimer); videoWaitTimer = null; }
+  document.body.style.overflow='';
+}
+
+async function clientDownloadWall(fid, title){
+  const url = `/api/download?id=${encodeURIComponent(fid)}&title=${encodeURIComponent(title||'')}`;
+  toast(currentLang === 'en' ? 'Preparing client download...' : '正在准备客户端下载...', 'info');
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i);
+    const fileName = m ? decodeURIComponent(m[1] || m[2] || '') : `${safeDownloadName(title || `Wallpaper ${fid}`)}-${fid}.zip`;
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = fileName || `${fid}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 3000);
+    return true;
+  } catch (e) {
+    toast((currentLang === 'en' ? 'Download failed: ' : '下载失败: ') + e.message, 'warn');
+    return false;
+  }
+}
+
+function safeDownloadName(name){
+  return String(name || 'Wallpaper').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'Wallpaper';
+}
+
+function backgroundDownloadWall(fid, title){
+  fetch(`/api/download/background?id=${encodeURIComponent(fid)}&title=${encodeURIComponent(title||'')}`)
+    .then(async r=>{
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      toast(j.message || (currentLang === 'en' ? 'Added to background queue' : '已加入后台下载队列'), 'ok');
+      fetchQueue();
+    })
+    .catch(e=>toast((currentLang === 'en' ? 'Background download failed: ' : '后台下载失败: ') + e.message, 'warn'));
+}
+function openVideoWaitModal(fid){
+  closeVideoWaitModal();
+  const ov = document.createElement('div');
+  ov.id = 'videoWaitOv';
+  ov.className = 'settings-modal-ov open';
+  ov.innerHTML = '<div class="settings-modal" style="max-width:520px;"><div class="settings-modal-head"><div class="settings-modal-title">'+ esc(t('videoWaitingTitle')) +'</div><button class="xbtn" id="videoWaitCloseBtn">×</button></div><div class="settings-modal-body" style="padding:16px;"><div style="color:var(--text2);margin-bottom:12px;">'+ esc(t('videoWaitingDesc')) +'</div><div style="height:10px;border:1px solid var(--border);background:var(--bg3);border-radius:999px;overflow:hidden;"><div id="videoWaitBar" style="height:100%;width:0;background:linear-gradient(135deg,var(--accent),var(--accent2));transition:width .25s;"></div></div><div id="videoWaitText" style="margin-top:10px;color:var(--text2);font-size:13px;">0%</div><div id="videoWaitSpeed" style="margin-top:6px;color:var(--accent);font-size:13px;font-family:monospace;">↓ 0 B/s</div></div></div>';
+  document.body.appendChild(ov);
+  document.body.style.overflow='hidden';
+  ov.addEventListener('click', (e)=>{ if(e.target===ov) closeVideoWaitModal(); });
+  ov.querySelector('#videoWaitCloseBtn').addEventListener('click', closeVideoWaitModal);
+
+  videoWaitTimer = setInterval(async ()=>{
+    try {
+      const r = await fetch('/api/queue');
+      if(!r.ok) return;
+      const data = await r.json();
+      const list = data.tasks || [];
+      const tsk = list.find(x => String(x.id) === String(fid));
+      if (!tsk) return;
+      const pct = Math.max(0, Math.min(100, Number(tsk.progress || 0)));
+      const speed = Math.max(0, Number(tsk.speed || data.rxSpeed || 0));
+      const bar = document.getElementById('videoWaitBar');
+      const txt = document.getElementById('videoWaitText');
+      const speedEl = document.getElementById('videoWaitSpeed');
+      if (bar) bar.style.width = pct.toFixed(1) + '%';
+      if (txt) txt.textContent = pct.toFixed(1) + '% · ' + (tsk.status || 'pending');
+      if (speedEl) speedEl.textContent = '↓ ' + formatQueueSpeed(speed);
+      if (tsk.status === 'completed') {
+        closeVideoWaitModal();
+        toast(t('videoOpening'), 'ok');
+        openVideoPlayer('/api/video/stream?id=' + encodeURIComponent(fid));
+      }
+      if (tsk.status === 'error') {
+        closeVideoWaitModal();
+        toast(t('playFailed', { msg: tsk.errorMsg || 'task error' }), 'warn');
+      }
+    } catch(_) {}
+  }, 1200);
+}
+
+async function playVideoNow(fid, title){
+  try {
+    const res = await fetch('/api/video/play?id=' + encodeURIComponent(fid) + '&title=' + encodeURIComponent(title||''));
+    const j = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+    if(j.status === 'ready') {
+      openVideoPlayer(j.streamUrl);
+      return;
+    }
+    toast(t('videoQueuedTip'), 'info');
+    openVideoWaitModal(fid);
+  } catch(e) {
+    toast(t('playFailed', { msg: e.message }), 'warn');
+  }
+}
+
+function openVideoPlayer(src){
+  let ov = document.getElementById('videoPlayOv');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'videoPlayOv';
+    ov.className = 'settings-modal-ov open';
+    ov.innerHTML = '<div class="settings-modal" style="max-width:980px;"><div class="settings-modal-head"><div class="settings-modal-title">'+esc(t('playVideo'))+'</div><button class="xbtn" id="videoCloseBtn">×</button></div><div class="settings-modal-body" style="padding:12px;"><video id="videoPlayerEl" controls autoplay style="width:100%;max-height:75vh;background:#000;border-radius:8px;"></video></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e)=>{ if(e.target===ov){ ov.remove(); document.body.style.overflow=''; } });
+    ov.querySelector('#videoCloseBtn').addEventListener('click', ()=>{ ov.remove(); document.body.style.overflow=''; });
+  } else {
+    ov.classList.add('open');
+  }
+  const v = document.getElementById('videoPlayerEl');
+  v.src = src;
+  v.load();
+  v.play().catch(()=>{});
+  document.body.style.overflow='hidden';
+}
+
 function dlWall(fid, title){
   const btn=document.getElementById(`sub-${fid}`);
-  let packTimer=0;
   if(btn){
     btn.classList.add('dling');
-    btn.innerHTML=`<i>⏳</i> ${t('processing')}`;
-    packTimer=setTimeout(()=>{
-      if(!btn.classList.contains('dling')) return;
-      btn.innerHTML=`<i>📦</i> ${t('packaging')}`;
-      toast(t('packagingToast'),'info');
-    },1800);
+    btn.innerHTML=`<i>⏳</i> 准备下载`;
   }
-  fetch(`/api/download?id=${fid}&title=${encodeURIComponent(title||'')}`)
-    .then(async r=>{
-      if(!r.ok){
-        let msg=`HTTP ${r.status}`;
-        try{
-          const j=await r.json();
-          msg=j.error||msg;
-        }catch{}
-        throw new Error(msg);
+  clientDownloadWall(fid, title)
+    .then(ok=>{
+      if (!ok) {
+        if(btn){ btn.classList.remove('dling'); btn.innerHTML=`<i>⚠</i> 失败`; }
+        return;
       }
-      const d=r.headers.get('content-disposition')||'';
-      const m=d.match(/filename\*=UTF-8''([^;]+)/i) || d.match(/filename="([^"]+)"/i);
-      const name=decodeURIComponent((m&&m[1])?m[1]:(`${title||('wallpaper-'+fid)}.bin`));
-      return r.blob().then(b=>({b,name}));
-    })
-    .then(({b,name})=>{
-      if(packTimer) clearTimeout(packTimer);
-      const u=URL.createObjectURL(b);
-      const a=document.createElement('a');
-      a.href=u;
-      a.download=name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(u),1500);
-      toast(t('downloadStarted', { name }), 'ok');
       if(btn){
         btn.classList.remove('dling');
         btn.classList.add('done');
-        btn.innerHTML=`<i>✓</i> ${t('btnDownloaded')}`;
+        btn.innerHTML=`<i>✓</i> 已推送`;
       }
     })
     .catch(e=>{
-      if(packTimer) clearTimeout(packTimer);
       toast(t('downloadFailed', { msg: e.message }), 'warn');
-      if(btn){ btn.classList.remove('dling'); btn.innerHTML=`<i>⚠</i> ${t('btnFailed')}`; }
+      if(btn){ btn.classList.remove('dling'); btn.innerHTML=`<i>⚠</i> 失败`; }
     });
 }
 
@@ -1105,18 +1282,17 @@ async function checkSteamLoginStatus(){
 }
 
 function updateLoginButton(loggedIn, username){
-  const btn = document.getElementById('loginBtn');
-  if(!btn) return;
+  const btn = document.getElementById('settingsLoginBtn');
+  const txt = document.getElementById('settingsLoginText');
+  if(!btn || !txt) return;
   
   if(loggedIn){
     btn.classList.add('logged-in');
-    btn.title = `已登录: ${username || 'Steam用户'}`;
-    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    txt.textContent = `已登录: ${username || 'Steam用户'} (点击退出)`;
     btn.onclick = showLogoutConfirm;
   } else {
     btn.classList.remove('logged-in');
-    btn.title = 'Steam 登录';
-    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    txt.textContent = '登录 Steam 账号';
     btn.onclick = openLoginModal;
   }
 }
@@ -1222,77 +1398,274 @@ async function submitSteamLogin(){
   }
 }
 
-// ─────────────────────────────────────────────────────────────────
-//  Video Player Functions
-// ─────────────────────────────────────────────────────────────────
-function openVideoModal(id, title){
-  currentModalItem = { id, title };
-  document.getElementById('videoTitle').textContent = title || '视频播放';
-  document.getElementById('videoModalOv').classList.add('open');
-  document.body.style.overflow='hidden';
-  
-  const video = document.getElementById('videoPlayer');
-  
-  // 显示加载提示
-  toast('正在加载视频，请稍候...', 'info');
-  
-  video.src = `/api/video/stream?id=${id}`;
-  video.load();
-  
-  let loadStartTime = Date.now();
-  let hasShownError = false;
-  
-  video.onloadeddata = function(){
-    const loadTime = ((Date.now() - loadStartTime) / 1000).toFixed(1);
-    console.log(`[Video] Loaded in ${loadTime}s`);
-    toast('视频加载完成', 'ok');
-    hasShownError = false;
-    // 自动播放视频
-    video.play().catch(err => {
-      console.warn('[Video] Autoplay failed:', err);
-      // 如果自动播放失败（浏览器策略限制），不显示错误
+// --- 下载队列前端逻辑 ---
+document.addEventListener('DOMContentLoaded', () => {
+  const queueBtn = document.getElementById('queueBtn');
+  if (queueBtn) {
+    queueBtn.addEventListener('click', () => {
+      document.getElementById('queueModalOv').classList.add('open');
+      fetchQueue();
     });
-  };
-  
-  video.onerror = function(){
-    if (hasShownError) return; // 防止重复提示
-    hasShownError = true;
+  }
+  // 每 1.5 秒轮询一次后端队列状态
+  setInterval(fetchQueue, 1500);
+});
+
+function formatBytesLocal(b) {
+  b = parseInt(b) || 0;
+  if (!b) return '0 B';
+  if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+  return b + ' B';
+}
+
+function formatQueueSpeed(bps) {
+  return formatBytesLocal(bps) + '/s';
+}
+
+function queueCardSelector(action, id) {
+  const source = action === 'delete_cache' ? 'cache' : 'queue';
+  const safeId = window.CSS && CSS.escape ? CSS.escape(String(id)) : String(id).replace(/["\\]/g, '\\$&');
+  return `.q-item[data-source="${source}"][data-id="${safeId}"]`;
+}
+
+let lastQueueRenderKey = '';
+let lastQueueItemKeys = new Set();
+
+function getQueueItemKey(t) {
+  const id = String(t.id || t.cacheKey || '');
+  const source = t.source === 'cache' ? 'cache' : 'queue';
+  return `${source}:${id}`;
+}
+
+function getQueueStructureKey(list) {
+  return list.map(t => [
+    getQueueItemKey(t),
+    t.status || '',
+    t.title || t.name || '',
+    t.coverUrl || '',
+    t.isVideo ? 'v' : '',
+    t.canPlay ? 'p' : ''
+  ].join('|')).join('||');
+}
+
+function renderQueueEmpty(container) {
+  if (lastQueueRenderKey === 'empty' && container.querySelector('.queue-empty')) return;
+  container.innerHTML = '<div class="queue-empty"><div class="queue-empty-icon">📦</div><div class="queue-empty-text">当前队列空空如也 🍃</div></div>';
+  lastQueueRenderKey = 'empty';
+  lastQueueItemKeys = new Set();
+}
+
+function updateQueueCardMetrics(list, data) {
+  list.forEach(t => {
+    const id = String(t.id || t.cacheKey || '');
+    const key = getQueueItemKey(t);
+    const safeKey = window.CSS && CSS.escape ? CSS.escape(key) : key.replace(/["\\]/g, '\\$&');
+    const card = document.querySelector(`.q-item[data-qkey="${safeKey}"]`);
+    if (!card) return;
+    const prog = Math.max(0, Math.min(100, Number(t.progress || 0)));
+    const total = Number(t.total || t.size || 0);
+    const downloaded = Number(t.downloaded || (t.status === 'completed' ? total : 0));
+    const sizeStr = total > 0 ? `${formatBytesLocal(downloaded)} / ${formatBytesLocal(total)}` : (downloaded > 0 ? formatBytesLocal(downloaded) : '大小未知');
+    const speedStr = t.status === 'downloading' ? ` · ${formatQueueSpeed(t.speed || data.rxSpeed || 0)}` : '';
+    const statusMap = { pending:'排队中', downloading:'下载中', moving:'转移中', paused:'已暂停', error:'失败', completed:'已完成' };
+    const sText = statusMap[t.status] || t.status || '';
+    const bar = card.querySelector('.q-bar-fill');
+    const sizeEl = card.querySelector('[data-qmetric="size"]');
+    const pctEl = card.querySelector('[data-qmetric="progress"]');
+    const statusEl = card.querySelector('.q-status');
+    if (bar) bar.style.width = prog + '%';
+    if (sizeEl) sizeEl.textContent = sizeStr + speedStr;
+    if (pctEl) pctEl.textContent = prog.toFixed(1) + '%';
+    if (statusEl) {
+      statusEl.className = `q-status ${t.status || ''}`;
+      statusEl.textContent = sText;
+    }
+    card.dataset.id = esc(id);
+  });
+}
+
+function openQueueItemDetail(id) {
+  const item = (S.items || []).find(w => String(w.publishedfileid) === String(id)) || null;
+  if (item) {
+    openModal(item.publishedfileid);
+    return;
+  }
+  fetch(`/api/steam/details?id=${encodeURIComponent(id)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d) return;
+      const fallback = {
+        publishedfileid: String(id),
+        title: d.title || d.name || String(id),
+        preview_url: d.preview_url || '',
+        short_description: d.description || '',
+        creator: d.creator || '',
+        tags: Array.isArray(d.tags) ? d.tags : [],
+        file_size: d.file_size || 0,
+        time_updated: d.time_updated || 0,
+        subscriptions: d.subscriptions || 0,
+        favorited: d.favorited || 0,
+        views: d.views || 0
+      };
+      S.items = [fallback].concat(S.items || []);
+      openModal(fallback.publishedfileid);
+    })
+    .catch(() => {});
+}
+
+function animateQueueCard(action, id) {
+  const el = document.querySelector(queueCardSelector(action, id));
+  if (!el) return Promise.resolve();
+  const cls = action === 'up'
+    ? 'q-anim-up'
+    : action === 'down'
+      ? 'q-anim-down'
+      : (action === 'delete' || action === 'delete_cache')
+        ? 'q-anim-delete'
+        : '';
+  if (!cls) return Promise.resolve();
+  el.classList.remove('q-anim-up', 'q-anim-down', 'q-anim-delete');
+  void el.offsetWidth;
+  el.classList.add(cls);
+  return new Promise(resolve => setTimeout(resolve, cls === 'q-anim-delete' ? 220 : 180));
+}
+
+async function fetchQueue() {
+  try {
+    const res = await fetch('/api/queue');
+    if (!res.ok) return;
     
-    console.error('[Video] Load error');
-    setTimeout(() => {
-      if (document.getElementById('videoModalOv').classList.contains('open')) {
-        closeVideoModal();
-      }
-    }, 3000);
-  };
-  
-  video.onwaiting = function(){
-    console.log('[Video] Buffering...');
-  };
-  
-  video.onplaying = function(){
-    console.log('[Video] Playing');
-    hasShownError = false;
-  };
+    // 解析新的 JSON 结构
+    const data = await res.json();
+    const list = data.tasks || [];
+    
+    // 渲染铃铛右上角的数字
+    const activeCount = list.filter(t => t.status === 'pending' || t.status === 'downloading' || t.status === 'moving').length;
+    const badge = document.getElementById('queueBadge');
+    if (badge) {
+      if (activeCount > 0) { badge.style.display = 'block'; badge.textContent = activeCount; } 
+      else { badge.style.display = 'none'; }
+    }
+
+    if (!document.getElementById('queueModalOv').classList.contains('open')) return;
+
+    const container = document.getElementById('queueList');
+    if (!list.length) {
+      renderQueueEmpty(container);
+      return;
+    }
+
+    const structureKey = getQueueStructureKey(list);
+    if (structureKey === lastQueueRenderKey) {
+      updateQueueCardMetrics(list, data);
+      return;
+    }
+    const previousKeys = lastQueueItemKeys;
+    const currentKeys = new Set(list.map(getQueueItemKey));
+    lastQueueRenderKey = structureKey;
+    lastQueueItemKeys = currentKeys;
+
+    // 渲染包含进度、大小、速度、播放/删除操作的统一队列列表
+    container.innerHTML = list.map(t => {
+      const id = String(t.id || t.cacheKey || '');
+      const key = getQueueItemKey(t);
+      const isNewItem = !previousKeys.has(key);
+      const prog = Math.max(0, Math.min(100, Number(t.progress || 0)));
+      const progStr = prog.toFixed(1) + '%';
+      const statusMap = { pending:'排队中', downloading:'下载中', moving:'转移中', paused:'已暂停', error:'失败', completed:'已完成' };
+      const sText = statusMap[t.status] || t.status;
+      const isCache = t.source === 'cache';
+      const title = t.title || t.name || id;
+      const total = Number(t.total || t.size || 0);
+      const downloaded = Number(t.downloaded || (t.status === 'completed' ? total : 0));
+      const sizeStr = total > 0 ? `${formatBytesLocal(downloaded)} / ${formatBytesLocal(total)}` : (downloaded > 0 ? formatBytesLocal(downloaded) : '大小未知');
+      const speedStr = t.status === 'downloading' ? ` · ${formatQueueSpeed(t.speed || data.rxSpeed || 0)}` : '';
+      const cover = t.coverUrl ? `<img class="queue-cover" src="${esc(t.coverUrl)}" alt="cover">` : '';
+      const playBtn = (t.isVideo || t.canPlay)
+        ? `<button class="q-btn" onclick="event.stopPropagation(); ${isCache ? `playCachedItem('${esc(t.cacheKey || id)}','${esc(title)}')` : `playVideoNow(${Number(id)}, '${esc(title)}')`}">播放</button>`
+        : '';
+      const downloadBtn = t.status === 'completed'
+        ? `<button class="q-btn q-download" onclick="event.stopPropagation(); clientDownloadWall(${Number(id)}, '${esc(title)}')">下载</button>`
+        : '';
+      const deleteAction = isCache ? 'delete_cache' : 'delete';
+      const deleteArg = isCache ? `'${esc(t.cacheKey || id)}'` : Number(id);
+      return `
+      <div class="q-item ${isNewItem ? 'q-anim-enter' : ''}" data-qkey="${esc(key)}" data-source="${isCache ? 'cache' : 'queue'}" data-id="${esc(isCache ? (t.cacheKey || id) : id)}" onclick="${isCache ? `openQueueItemDetail('${esc(t.cacheKey || id)}')` : `openQueueItemDetail('${esc(id)}')`}">
+        <div class="q-head">
+          <div class="queue-head">${cover}<span class="q-title" title="${esc(title)}">${esc(title)}</span></div>
+          <span class="q-status ${t.status}">${sText}</span>
+        </div>
+        ${t.status === 'error' ? `<div style="font-size:12px; color:var(--danger); margin-top:-4px;">${esc(t.errorMsg)}</div>` : ''}
+        
+        <div class="q-bar-bg"><div class="q-bar-fill" style="width: ${prog}%"></div></div>
+        <div class="q-info">
+          <span data-qmetric="size">${sizeStr}${speedStr}</span>
+          <span data-qmetric="progress">${progStr}</span>
+        </div>
+        
+        <div class="q-actions">
+          ${playBtn}
+          ${downloadBtn}
+          ${(!isCache && (t.status === 'downloading' || t.status === 'pending')) ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('pause', ${Number(id)})">暂停</button>` : ''}
+          ${(!isCache && (t.status === 'paused' || t.status === 'error')) ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('resume', ${Number(id)})">继续</button>` : ''}
+          ${!isCache && t.status !== 'completed' ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('up', ${Number(id)})">上移</button>` : ''}
+          ${!isCache && t.status !== 'completed' ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('down', ${Number(id)})">下移</button>` : ''}
+          <button class="q-btn danger" onclick="event.stopPropagation(); qAction('${deleteAction}', ${deleteArg})">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    console.warn('Queue refresh failed:', e);
+  }
 }
 
-function closeVideoModal(){
-  document.getElementById('videoModalOv').classList.remove('open');
-  document.body.style.overflow='';
-  
-  const video = document.getElementById('videoPlayer');
-  video.pause();
-  video.src = '';
-  video.load();
-  currentModalItem = null;
+async function qAction(action, id) {
+  try {
+    const shouldAnimateFirst = ['up', 'down', 'delete', 'delete_cache'].includes(action);
+    if (shouldAnimateFirst) await animateQueueCard(action, id);
+    const res = await fetch('/api/queue/action', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ action, id })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if (action === 'delete' || action === 'delete_cache') {
+      toast(currentLang === 'en' ? 'Deleted' : '已删除', 'ok');
+    }
+    fetchQueue(); // 操作后立刻刷新UI
+  } catch (e) {
+    console.error('Queue action failed:', e);
+    toast((currentLang === 'en' ? 'Action failed: ' : '操作失败: ') + e.message, 'warn');
+  }
 }
 
-function videoModalOvClick(e){
-  if(e.target === document.getElementById('videoModalOv')) closeVideoModal();
+function playCachedItem(key, name) {
+  openCachePlayer('/api/cache/video/stream?key=' + encodeURIComponent(key), name);
 }
 
-function playVideo(){
-  if(!currentModalItem) return;
-  closeModal();
-  openVideoModal(currentModalItem.id, currentModalItem.title);
+function openCachePlayer(src, title) {
+  let ov = document.getElementById('queueVideoOv');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'queueVideoOv';
+    ov.className = 'settings-modal-ov open';
+    ov.innerHTML = '<div class="settings-modal" style="max-width:980px;"><div class="settings-modal-head"><div class="settings-modal-title">' + esc(title || (currentLang === 'en' ? 'Cached Video' : '缓存视频')) + '</div><button class="xbtn" id="queueVideoCloseBtn">×</button></div><div class="settings-modal-body" style="padding:12px;"><video id="queueVideoPlayerEl" controls autoplay style="width:100%;max-height:75vh;background:#000;border-radius:8px;"></video></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => { if (e.target === ov) { ov.remove(); document.body.style.overflow = ''; } });
+    ov.querySelector('#queueVideoCloseBtn').addEventListener('click', () => { ov.remove(); document.body.style.overflow = ''; });
+  }
+  const v = document.getElementById('queueVideoPlayerEl');
+  v.src = src;
+  v.load();
+  v.play().catch(() => {});
+  document.body.style.overflow = 'hidden';
 }
+
+
+
+
+
+

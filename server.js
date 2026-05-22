@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 /*
   WallHub server.js v4.1
   ─────────────────────────────────────────────────────────────────
@@ -20,24 +20,80 @@ const { URL } = require('url');
 
 const PORT   = process.env.PORT ? parseInt(process.env.PORT) : 3090;
 const PUBLIC = path.join(__dirname, 'public');
+const IS_RESTART_CHILD = process.env.WALLHUB_RESTART_CHILD === '1';
 
-const DOWNLOAD_DIR = path.join(__dirname, 'downloads');
+const VIDEO_TASK_MAP = new Map();
+
+// 下载队列管理全局状态 ---
+const TASK_QUEUE = [];
+let ACTIVE_TASK = null;
+let queueProcessorRunning = false;
+
+// Docker / Windows 全局网速监控
+let lastRxBytes = 0;
+let lastNetTime = Date.now();
+let currentRxSpeed = 0;
+function readSystemRxBytes() {
+  if (process.platform === 'linux') {
+    const dev = fs.readFileSync('/proc/net/dev', 'utf8');
+    const lines = dev.split('\n');
+    let totalRx = 0;
+    for (let i = 2; i < lines.length; i++) {
+      const parts = lines[i].trim().split(/\s+/);
+      if (parts.length > 1 && !parts[0].startsWith('lo')) {
+        totalRx += parseInt(parts[1]) || 0;
+      }
+    }
+    return totalRx;
+  }
+  if (process.platform === 'win32') {
+    const out = execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      '(Get-NetAdapterStatistics | Measure-Object -Property ReceivedBytes -Sum).Sum'
+    ], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return parseInt(out) || 0;
+  }
+  return 0;
+}
+setInterval(() => {
+  try {
+    const totalRx = readSystemRxBytes();
+    const now = Date.now();
+    if (lastRxBytes > 0 && now > lastNetTime) {
+      currentRxSpeed = (totalRx - lastRxBytes) / ((now - lastNetTime) / 1000);
+    }
+    lastRxBytes = totalRx;
+    lastNetTime = now;
+  } catch (e) {
+    currentRxSpeed = 0;
+  }
+}, 1000);
+
 const PERSONA_CACHE = new Map();
+const CACHED_ITEM_META = new Map();
 const STEAM_CREDENTIALS = { username: '', password: '', steamGuardCode: '', isPersistent: false };
 
 // 根据操作系统设置 Steam 配置目录
 // Windows: 项目根目录/steamcmd
 // Linux: /root/Steam (Docker 环境)
+const isAsciiPath = (v) => /^[\x00-\x7F]*$/.test(String(v || ''));
+const getWindowsSteamCmdBaseDir = () => {
+  if (isAsciiPath(__dirname)) return path.join(__dirname, 'steamcmd');
+  const drive = path.parse(__dirname).root || 'C:\\';
+  return path.join(drive, 'SteamCMD');
+};
 const getDefaultSteamConfigDir = () => {
   if (process.platform === 'win32') {
-    return path.join(__dirname, 'steamcmd');
+    return getWindowsSteamCmdBaseDir();
   }
   return '/root/Steam';
 };
 const STEAM_CONFIG_DIR = process.env.STEAM_CONFIG_DIR || getDefaultSteamConfigDir();
 const WORKSHOP_CACHE_DIR = path.join(STEAM_CONFIG_DIR, 'steamapps', 'workshop', 'content', '431960');
 const CACHE_SETTINGS_FILE = path.join(__dirname, 'cache-settings.json');
-let VIDEO_CACHE_SETTINGS = { cacheDays: 7, steamApiKey: '', useSteamApi: false }; // Default settings
+let VIDEO_CACHE_SETTINGS = { steamApiKey: '', useSteamApi: false }; // Default settings
+const VIDEO_EXTS = new Set(['.mp4', '.webm', '.wmv', '.avi', '.mkv', '.mov', '.m4v']);
 
 // 确保 Steam 配置目录存在
 function ensureSteamConfigDir() {
@@ -58,13 +114,13 @@ function loadCacheSettings() {
       const data = fs.readFileSync(CACHE_SETTINGS_FILE, 'utf8');
       const parsed = JSON.parse(data);
       VIDEO_CACHE_SETTINGS = Object.assign(
-        { cacheDays: 7, steamApiKey: '', useSteamApi: false },
+        { steamApiKey: '', useSteamApi: false },
         parsed || {}
       );
-      console.log(`[Cache] Loaded settings: ${VIDEO_CACHE_SETTINGS.cacheDays} days`);
+      console.log(`[Settings] Loaded Steam API settings`);
     }
   } catch (e) {
-    console.warn('[Cache] Failed to load settings:', e.message);
+    console.warn('[Settings] Failed to load settings:', e.message);
   }
 }
 
@@ -72,45 +128,72 @@ function loadCacheSettings() {
 function saveCacheSettings() {
   try {
     fs.writeFileSync(CACHE_SETTINGS_FILE, JSON.stringify(VIDEO_CACHE_SETTINGS, null, 2));
-    console.log(`[Cache] Saved settings: ${VIDEO_CACHE_SETTINGS.cacheDays} days`);
+    console.log(`[Settings] Saved Steam API settings`);
   } catch (e) {
-    console.warn('[Cache] Failed to save settings:', e.message);
+    console.warn('[Settings] Failed to save settings:', e.message);
   }
 }
 
-// Clean old cache files from workshop directory
-function cleanOldCacheFiles() {
+function isDockerLikeEnv() {
+  if (process.env.DOCKER_CONTAINER || process.env.CONTAINER || process.env.KUBERNETES_SERVICE_HOST) return true;
   try {
-    if (!fs.existsSync(WORKSHOP_CACHE_DIR)) {
-      console.log('[Cache] Workshop cache directory does not exist:', WORKSHOP_CACHE_DIR);
-      return;
+    if (fs.existsSync('/.dockerenv')) return true;
+    if (fs.existsSync('/proc/1/cgroup')) {
+      const cgroup = fs.readFileSync('/proc/1/cgroup', 'utf8');
+      if (/docker|containerd|kubepods/i.test(cgroup)) return true;
     }
-    
-    const now = Date.now();
-    const maxAge = VIDEO_CACHE_SETTINGS.cacheDays * 24 * 60 * 60 * 1000;
-    let deletedCount = 0;
-    
-    const items = fs.readdirSync(WORKSHOP_CACHE_DIR);
-    for (const item of items) {
-      const itemPath = path.join(WORKSHOP_CACHE_DIR, item);
-      try {
-        const stats = fs.statSync(itemPath);
-        if (stats.isDirectory() && (now - stats.mtimeMs) > maxAge) {
-          fs.rmSync(itemPath, { recursive: true, force: true });
-          deletedCount++;
-          console.log(`[Cache] Deleted old workshop item: ${item}`);
-        }
-      } catch (e) {
-        console.warn(`[Cache] Failed to check/delete ${item}:`, e.message);
-      }
-    }
-    
-    if (deletedCount > 0) {
-      console.log(`[Cache] Cleaned ${deletedCount} old workshop items`);
-    }
-  } catch (e) {
-    console.warn('[Cache] Failed to clean old files:', e.message);
+  } catch (e) {}
+  return false;
+}
+
+function buildRestartCommand() {
+  const env = Object.assign({}, process.env, { WALLHUB_RESTART_CHILD: '1' });
+  const args = [process.argv[1]].concat(process.argv.slice(2).filter(a => a !== '--restart-after-exit'));
+  return { args, env };
+}
+
+async function restartServer() {
+  const isDocker = isDockerLikeEnv();
+  const { args, env } = buildRestartCommand();
+  if (isDocker) {
+    setTimeout(() => process.exit(0), 800);
+    return { mode: 'exit' };
   }
+
+  if (process.platform === 'win32') {
+    const psLiteral = (v) => `'${String(v).replace(/'/g, "''")}'`;
+    const psPath = path.join(os.tmpdir(), `wallhub-restart-${Date.now()}.ps1`);
+    const logPath = path.join(os.tmpdir(), 'wallhub-restart.log');
+    const psArgs = args.map(psLiteral).join(', ');
+    const envLines = Object.keys(env)
+      .filter(k => /^(PORT|NODE_ENV|STEAM_|HTTP_|HTTPS_|NO_PROXY|WALLHUB_)/i.test(k))
+      .map(k => `$env:${k} = ${psLiteral(env[k])}`);
+    const script = [
+      "$ErrorActionPreference = 'Continue'",
+      `"[$(Get-Date -Format o)] restart helper started" | Out-File -FilePath ${psLiteral(logPath)} -Append -Encoding utf8`,
+      'Start-Sleep -Seconds 2',
+      ...envLines,
+      "$env:WALLHUB_RESTART_CHILD = '1'",
+      `$p = Start-Process -WindowStyle Hidden -PassThru -FilePath ${psLiteral(process.execPath)} -ArgumentList @(${psArgs}) -WorkingDirectory ${psLiteral(__dirname)}`,
+      `"[$(Get-Date -Format o)] node pid=$($p.Id)" | Out-File -FilePath ${psLiteral(logPath)} -Append -Encoding utf8`,
+      'Start-Sleep -Seconds 1',
+      `Remove-Item -LiteralPath ${psLiteral(psPath)} -Force -ErrorAction SilentlyContinue`
+    ].join('\r\n');
+    fs.writeFileSync(psPath, script, 'utf8');
+    spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psPath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env
+    }).unref();
+    setTimeout(() => process.exit(0), 500);
+    return { mode: 'powershell' };
+  }
+
+  const child = spawn(process.execPath, args, { detached: true, stdio: 'ignore', env });
+  child.unref();
+  setTimeout(() => process.exit(0), 500);
+  return { mode: 'spawn' };
 }
 
 const STEAM_PREF_COOKIE = [
@@ -182,6 +265,16 @@ function checkSteamPersistentLogin() {
 
 // 初始化时检测持久化登录
 function initializeSteamCredentials() {
+  // 优先从我们自己的 settings 中读取持久化状态，彻底解决 Docker 重启丢失的问题
+  if (VIDEO_CACHE_SETTINGS.steamUsername && VIDEO_CACHE_SETTINGS.steamIsPersistent) {
+    STEAM_CREDENTIALS.username = VIDEO_CACHE_SETTINGS.steamUsername;
+    STEAM_CREDENTIALS.isPersistent = true;
+    STEAM_CREDENTIALS.password = '';
+    STEAM_CREDENTIALS.steamGuardCode = '';
+    console.log(`[Steam Init] Loaded persistent login from settings: ${STEAM_CREDENTIALS.username}`);
+    return;
+  }
+
   const persistent = checkSteamPersistentLogin();
   if (persistent && persistent.username) {
     STEAM_CREDENTIALS.username = persistent.username;
@@ -671,40 +764,35 @@ async function getFileDetailsSafe(ids) {
 //  Scrape workshop/browse → extract FileIDs + real total count
 // ─────────────────────────────────────────────────────────────────
 async function scrapeIds(params) {
-  const sortMap = { 1:'trend', 2:'mostrecent', 21:'lastupdated', 16:'totaluniquesubscribers' };
-  const sort    = sortMap[parseInt(params.query_type)] || 'trend';
   const page    = parseInt(params.page) || 1;
   const appId   = params.appid || 431960;
+  let url = '';
 
-  const qs = [
-    `appid=${appId}`,
-    `browsesort=${sort}`,
-    `section=readytouseitems`,
-    `actualsort=${sort}`,
-    `p=${page}`,
-    `numperpage=${params.numperpage || 30}`,
-  ];
-  if (params.search_text) qs.push(`searchtext=${encodeURIComponent(params.search_text)}`);
-  if (params.days && sort === 'trend' && String(params.days) !== '0') qs.push(`days=${params.days}`);
-
-  // Required tags logic: 
-  // If user selects too many tags (e.g. "Select All"), Steam often returns 0 results.
-  // We'll clear the tags if count > 8, assuming the user wants to see everything.
-  const tags = [];
-  for (const [k, v] of Object.entries(params)) {
-    if (/^requiredtags/.test(k) && v) tags.push(String(v));
-  }
-  
-  if (tags.length > 8) {
-    console.log(`[Scrape] Too many tags (${tags.length}), clearing filter to show all.`);
-    // Don't add to qs
+  // 如果是按作者查询，直接转到该作者的创意工坊主页
+  if (params.creator) {
+    url = `https://steamcommunity.com/profiles/${params.creator}/myworkshopfiles/?appid=${appId}&p=${page}&numperpage=${params.numperpage || 30}`;
   } else {
-    tags.forEach(t => qs.push(`requiredtags[]=${encodeURIComponent(t)}`));
+    // 正常的标签搜索逻辑
+    const sortMap = { 1:'trend', 2:'mostrecent', 11:'mostvotes', 16:'totaluniquesubscribers' };
+    const sort    = sortMap[parseInt(params.query_type)] || 'trend';
+    const qs = [
+      `appid=${appId}`, `browsesort=${sort}`, `section=readytouseitems`,
+      `actualsort=${sort}`, `p=${page}`, `numperpage=${params.numperpage || 30}`,
+    ];
+    if (params.search_text) qs.push(`searchtext=${encodeURIComponent(params.search_text)}`);
+    if (params.days && sort === 'trend' && String(params.days) !== '0') qs.push(`days=${params.days}`);
+
+    const tags = [];
+    for (const [k, v] of Object.entries(params)) {
+      if (/^requiredtags/.test(k) && v) tags.push(String(v));
+    }
+    if (tags.length <= 8) {
+      tags.forEach(t => qs.push(`requiredtags[]=${encodeURIComponent(t)}`));
+    }
+    url = `https://steamcommunity.com/workshop/browse/?${qs.join('&')}`;
   }
 
-  const url = `https://steamcommunity.com/workshop/browse/?${qs.join('&')}`;
   console.log(`[Scrape] ${url}`);
-
   const html = (await GET(url)).toString('utf8');
 
   // ── Extract real total_count from Steam HTML ──
@@ -794,10 +882,10 @@ function getSteamApiKey() {
 
 function mapLocalQueryTypeToSteamApi(localType) {
   const n = parseInt(localType);
-  if (n === 1) return 3;
-  if (n === 2) return 1;
-  if (n === 21) return 21;
-  if (n === 16) return 9;
+  if (n === 11) return 11; // 最多投票
+  if (n === 1) return 3;  // 最热门
+  if (n === 2) return 1;  // 最近
+  if (n === 16) return 9; // 最多订阅
   return 3;
 }
 
@@ -839,6 +927,25 @@ function buildSteamApiQueryFields(params, singleGenreTag) {
 }
 
 async function queryWorkshopBySteamApi(apiKey, params, genreOr) {
+  // 如果传了作者，直接调用专用的 GetUserFiles API
+  if (params.creator) {
+    const qsUser = [
+      `key=${apiKey}`, `steamid=${params.creator}`, `appid=${params.appid || 431960}`,
+      `page=${params.page || 1}`, `numperpage=${params.numperpage || 30}`,
+      `return_details=1`, `return_tags=1`, `return_preview_url=1`,
+      `return_short_description=1`, `return_metadata=1`
+    ];
+    const url = `https://api.steampowered.com/IPublishedFileService/GetUserFiles/v1/?${qsUser.join('&')}`;
+    const raw = await GET(url, { 'Accept': 'application/json' }, 22000);
+    const data = JSON.parse(raw.toString('utf8'));
+    const resp = data.response || {};
+    const details = Array.isArray(resp.publishedfiledetails) ? resp.publishedfiledetails : [];
+    const ids = details.map(d => String(d.publishedfileid)).filter(Boolean);
+    const detailMap = {};
+    details.forEach(d => { if(d.result === 1) detailMap[d.publishedfileid] = d; });
+    return { ids, totalCount: parseInt(resp.total) || 0, detailMap };
+  }
+
   const genreList = Array.from(new Set((genreOr || []).map(x => String(x || '').trim()).filter(Boolean)));
   const needMultiGenre = genreList.length > 1;
   const effectiveGenres = needMultiGenre ? genreList : [genreList[0] || ''];
@@ -1131,6 +1238,7 @@ async function handleDetails(res, id) {
     preview_url: (A&&A.preview_url) || (H&&H.preview_url) || '',
     description: (H&&H.description) || (A&&A.short_description) || '',
     author:      finalAuthor,
+	creator:     creatorId,
     subscriptions: fmtStat((A&&(A.lifetime_subscriptions||A.subscriptions)), H&&H.subscriptions),
     favorited:     fmtStat((A&&(A.lifetime_favorited||A.favorited)),         H&&H.favorited),
     views:         fmtStat((A&&A.views),                                     H&&H.views),
@@ -1279,57 +1387,156 @@ function mimeFromExt(ext) {
   };
   return m[ext] || 'application/octet-stream';
 }
+function getVideoMime(filePath) {
+  return mimeFromExt(path.extname(String(filePath || '')).toLowerCase());
+}
+function isVideoExt(ext) {
+  return VIDEO_EXTS.has(String(ext || '').toLowerCase());
+}
+function getWorkshopContentDir(appId) {
+  return path.join(STEAM_CONFIG_DIR, 'steamapps', 'workshop', 'content', String(appId || 431960));
+}
+function findFirstVideoInDir(dir) {
+  if (!fs.existsSync(dir)) return null;
+  const queue = [dir];
+  while (queue.length) {
+    const current = queue.shift();
+    let ents = [];
+    try { ents = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
+    for (const ent of ents) {
+      const fp = path.join(current, ent.name);
+      if (ent.isDirectory()) {
+        queue.push(fp);
+        continue;
+      }
+      if (ent.isFile() && isVideoExt(path.extname(fp))) return fp;
+    }
+  }
+  return null;
+}
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 function runProcess(bin, args, timeoutMs, options = {}) {
   let killFn = null;
-  
   const promise = new Promise((resolve, reject) => {
-    const spawnOptions = Object.assign({
-      windowsHide: true,
-      env: Object.assign({}, process.env)
+    // 开启 detached 让 Linux 进程独立成组
+    const spawnOptions = Object.assign({ 
+      windowsHide: true, 
+      env: Object.assign({}, process.env),
+      detached: process.platform !== 'win32' 
     }, options);
     const cp = spawn(bin, args, spawnOptions);
     let out = '';
     let err = '';
-    const timer = setTimeout(() => {
-      try { cp.kill(); } catch {}
-      reject(new Error('外部下载进程超时'));
-    }, timeoutMs || 240000);
     
-    cp.stdout.on('data', d => out += d.toString());
-    cp.stderr.on('data', d => err += d.toString());
-    cp.on('error', e => {
-      clearTimeout(timer);
-      reject(e);
+    // 进度与速度计算变量
+    let lastBytes = 0;
+    let lastTime = Date.now();
+    let streamBuffer = ''; // 用于缓冲被截断的输出流
+
+    cp.stdout.on('data', d => {
+      const chunk = d.toString();
+      out += chunk;
+      
+      // 实时解析 SteamCMD 进度日志，防止数据块截断导致匹配失败
+      if (ACTIVE_TASK && ACTIVE_TASK.status === 'downloading') {
+        streamBuffer += chunk;
+        // 使用 matchAll 获取这段缓冲区里最新的一次进度
+        const matches = [...streamBuffer.matchAll(/progress:\s+[\d.]+\s+\((\d+)\s+\/\s+(\d+)\)/g)];
+        
+        if (matches.length > 0) {
+          const m = matches[matches.length - 1]; // 取最后一条最新进度
+          const currentBytes = parseInt(m[1]);
+          const totalBytes = parseInt(m[2]);
+          const now = Date.now();
+          
+          if (now - lastTime >= 1000) {
+            ACTIVE_TASK.speed = (currentBytes - lastBytes) / ((now - lastTime) / 1000);
+            lastBytes = currentBytes;
+            lastTime = now;
+          }
+          
+          ACTIVE_TASK.progress = (currentBytes / totalBytes) * 100;
+          ACTIVE_TASK.downloaded = currentBytes;
+          ACTIVE_TASK.total = totalBytes;
+          
+          // 保留尾巴，防止下一次输出被截断，同时避免内存溢出
+          streamBuffer = streamBuffer.slice(-150); 
+        }
+      }
     });
+    
+    cp.stderr.on('data', d => err += d.toString());
+    cp.on('error', e => reject(e));
     cp.on('close', code => {
-      clearTimeout(timer);
+      if (ACTIVE_TASK) ACTIVE_TASK.speed = 0;
       if (code === 0) return resolve({ out, err });
       reject(new Error((err || out || `exit ${code}`).trim().slice(-1200)));
     });
     
-    // 暴露 kill 方法，允许外部中断进程
+    // 暴露强制中止方法供暂停功能使用
     killFn = () => {
-      clearTimeout(timer);
-      try {
-        cp.kill('SIGTERM');
-        setTimeout(() => {
-          try { cp.kill('SIGKILL'); } catch {}
-        }, 1000);
+      try { 
+        if (process.platform === 'win32') {
+          cp.kill('SIGKILL');
+          try { execFileSync('taskkill', ['/pid', cp.pid, '/T', '/F'], {stdio: 'ignore'}); } catch(e){}
+        } else {
+          // 通过 PID 发送信号给整个进程组
+          try { process.kill(-cp.pid, 'SIGKILL'); } catch(e) { cp.kill('SIGKILL'); }
+        }
       } catch {}
-      reject(new Error('Process killed by user'));
+      reject(new Error('任务已被取消或暂停'));
     };
   });
   
-  // 将 kill 方法附加到 Promise 对象
   promise.kill = killFn;
   return promise;
 }
+
+// --- 新增：原生直链流式下载器（用于处理有直链的壁纸并统计进度） ---
+function downloadWithProgress(urlStr, dest, task) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const mod = u.protocol === 'https:' ? https : http;
+    const req = mod.get(urlStr, { headers: { 'User-Agent': UA } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return downloadWithProgress(res.headers.location, dest, task).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+      
+      const total = parseInt(res.headers['content-length'] || '0');
+      task.total = total;
+      let downloaded = 0; let lastTime = Date.now(); let lastBytes = 0;
+
+      const file = fs.createWriteStream(dest);
+      res.on('data', chunk => {
+        downloaded += chunk.length;
+        task.downloaded = downloaded;
+        if (total) task.progress = (downloaded / total) * 100;
+        const now = Date.now();
+        if (now - lastTime > 1000) {
+          task.speed = (downloaded - lastBytes) / ((now - lastTime) / 1000);
+          lastBytes = downloaded; lastTime = now;
+        }
+      });
+      res.pipe(file);
+      file.on('finish', () => { file.close(); resolve(); });
+      file.on('error', err => { fs.unlink(dest, ()=>{}); reject(err); });
+      
+      task.cancelFn = () => {
+        req.destroy(); file.close(); fs.unlink(dest, ()=>{});
+        reject(new Error('任务已被取消或暂停'));
+      };
+    });
+    req.on('error', reject);
+  });
+}
 async function resolveSteamCmdPath() {
+  const winBase = getWindowsSteamCmdBaseDir();
   const candidates = [
     process.env.STEAMCMD_PATH || '',
+    path.join(winBase, 'steamcmd.exe'),
     path.join(__dirname, 'steamcmd', 'steamcmd.exe'),
     'C:\\steamcmd\\steamcmd.exe',
     'C:\\Program Files (x86)\\SteamCMD\\steamcmd.exe',
@@ -1441,14 +1648,17 @@ async function zipDir(dirPath, zipPath) {
     const cmd = `Compress-Archive -Path '${psQuote(path.join(dirPath, '*'))}' -DestinationPath '${psQuote(zipPath)}' -Force`;
     await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], 180000);
   } else {
-    const zipArgs = ['-r', path.basename(zipPath), '.'];
+    const zipArgs = ['-r', zipPath, '.'];
     await runProcess('zip', zipArgs, 180000, { cwd: dirPath });
+  }
+  if (!fs.existsSync(zipPath)) {
+    throw new Error(`ZIP 打包失败，未生成文件: ${zipPath}`);
   }
 }
 async function ensureSteamCmdReady() {
   const found = await resolveSteamCmdPath();
   if (found) return found;
-  const base = path.join(__dirname, 'steamcmd');
+  const base = process.platform === 'win32' ? getWindowsSteamCmdBaseDir() : path.join(__dirname, 'steamcmd');
   ensureDir(base);
   
   if (process.platform === 'win32') {
@@ -1519,7 +1729,8 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
   // 如果有持久化登录或账号登录，使用 STEAM_CONFIG_DIR 作为安装目录
   // 这样可以复用已登录的会话，避免重复登录
   // 只有匿名下载才使用临时目录
-  const useSharedDir = (isPersistent && user) || (user && pass);
+  const forceSharedDir = !!(options && options.forceSharedDir);
+  const useSharedDir = forceSharedDir || (isPersistent && user) || (user && pass);
   const tempRoot = useSharedDir 
     ? STEAM_CONFIG_DIR
     : fs.mkdtempSync(path.join(os.tmpdir(), 'wallhub-steamcmd-'));
@@ -1537,11 +1748,16 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
     attempts.push({ name: 'account', loginArgs: guard ? ['+login', user, pass, guard] : ['+login', user, pass] });
   } else {
     // 只有在没有账号信息时才使用匿名登录
-    console.log(`[SteamCMD] Using anonymous login (temp dir: ${tempRoot})`);
+    console.log(`[SteamCMD] Using anonymous login (${useSharedDir ? 'shared dir' : 'temp dir'}: ${tempRoot})`);
     attempts.push({ name: 'anonymous', loginArgs: ['+login', 'anonymous'] });
   }
   
   let lastErr = '';
+  try {
+    const acfFile = path.join(tempRoot, 'steamapps', 'workshop', `appworkshop_${appId}.acf`);
+    if (fs.existsSync(acfFile)) fs.rmSync(acfFile, { force: true });
+  } catch (err) {}
+
   const variants = [
     { name: 'normal', itemArgs: ['+workshop_download_item', String(appId), String(publishedFileId)] },
     { name: 'validate', itemArgs: ['+workshop_download_item', String(appId), String(publishedFileId), 'validate'] },
@@ -1596,9 +1812,83 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
             '+quit',
           ];
           
-          currentProcess = runProcess(steamcmdCommand, args, 300000);
-          await currentProcess;
-          currentProcess = null;
+          let retryCount = 0;
+          const maxRetries = 10; // 自动重试次数
+          let success = false;
+
+          let progressTimer = null;
+          if (options && options.task) {
+            const dlDir = path.join(tempRoot, 'steamapps', 'workshop', 'downloads', String(appId), String(publishedFileId));
+            let lastBytes = 0;
+            let lastTime = Date.now();
+            
+            progressTimer = setInterval(() => {
+              try {
+                let currentBytes = 0;
+                if (fs.existsSync(dlDir)) {
+                  const getDirSize = (dir) => {
+                    let size = 0;
+                    const ents = fs.readdirSync(dir, { withFileTypes: true });
+                    for (const e of ents) {
+                      const fp = path.join(dir, e.name);
+                      if (e.isDirectory()) size += getDirSize(fp);
+                      else {
+                        const st = fs.statSync(fp);
+                        // 直接使用物理块计算真实占用空间
+                        if (st.blocks !== undefined) {
+                          size += st.blocks * 512;
+                        } else {
+                          size += st.size;
+                        }
+                      }
+                    }
+                    return size;
+                  };
+                  currentBytes = getDirSize(dlDir);
+                }
+                
+                if (currentBytes > 0) {
+                  const now = Date.now();
+                  if (now - lastTime >= 1000) {
+                    options.task.speed = (currentBytes - lastBytes) / ((now - lastTime) / 1000);
+                    lastBytes = currentBytes;
+                    lastTime = now;
+                  }
+                  options.task.downloaded = currentBytes;
+                  if (options.task.total > 0) {
+                    options.task.progress = Math.min(99.9, (currentBytes / options.task.total) * 100);
+                  }
+                }
+              } catch (e) {}
+            }, 1000);
+          }
+          
+          try {
+            while (retryCount < maxRetries && !success) {
+              try {
+                currentProcess = runProcess(steamcmdCommand, args, 0); 
+                if (options && options.task) {
+                  options.task.processPromise = currentProcess; 
+                }
+                await currentProcess;
+                success = true; 
+              } catch (err) {
+                if ((err.message.includes('Timeout') || err.message.includes('No Connection')) && retryCount < maxRetries - 1) {
+                  retryCount++;
+                  console.log(`[SteamCMD] Steam底层5分钟断线机制触发，准备无缝重连 (${retryCount}/${maxRetries})...`);
+                  if (options && options.task) {
+                    options.task.errorMsg = `Steam 断线机制触发，正在无缝秒连续传 (${retryCount}/${maxRetries})...`;
+                  }
+                } else {
+                  throw err; 
+                }
+              } finally {
+                currentProcess = null;
+              }
+            }
+          } finally {
+            if (progressTimer) clearInterval(progressTimer);
+          }
           
           if (abortController.aborted) {
             throw new Error('Download aborted by client');
@@ -1617,6 +1907,10 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
           lastErr = `${at.name}/${variant.name} 未产出文件${reason ? `（${reason}）` : ''}`;
           console.warn(`[SteamCMD] ${lastErr}`);
         } catch (e) {
+          // 拦截被前端暂停或取消的任务，直接阻断外层的备用线路重试循环
+          if (e.message.includes('取消') || e.message.includes('暂停')) {
+            throw e;
+          }
           if (abortController.aborted) {
             throw new Error('Download aborted by client');
           }
@@ -1666,48 +1960,101 @@ async function downloadViaSteamCmd(publishedFileId, appId, title, options) {
         const videoExt = extFromPath(videoPath, '.mp4');
         const videoName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}${videoExt}`;
         console.log(`[SteamCMD] Found video file: ${videoPath}`);
-        return { kind: 'file', filePath: videoPath, fileName: videoName, tempRoot, useSharedDir };
+        return { kind: 'file', filePath: videoPath, fileName: videoName, tempRoot, useSharedDir, itemDir };
       }
     }
-    const zipName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}.zip`;
-    const zipPath = path.join(DOWNLOAD_DIR, zipName);
-    await zipDir(itemDir, zipPath);
     
-    console.log(`[SteamCMD] Created zip: ${zipPath}`);
+    // 直接准备移动整个文件夹
+    const folderName = `${safeName(title || `Wallpaper ${publishedFileId}`)}-${publishedFileId}`;
+    console.log(`[SteamCMD] Folder ready, skipping zip: ${itemDir}`);
     
-    // 清理临时目录
-    if (!useSharedDir) {
-      try {
-        if (fs.existsSync(tempRoot)) {
-          fs.rmSync(tempRoot, { recursive: true, force: true });
-        }
-      } catch (e) {
-        console.warn('[SteamCMD] Failed to cleanup temp dir:', e.message);
-      }
-    }
+    // 直接将整个文件夹路径作为目标返回，交由 triggerQueue 去搬运
+    return { kind: 'file', filePath: itemDir, fileName: folderName, tempRoot, useSharedDir, itemDir: itemDir };
     
     return { kind: 'zip', zipPath, zipName };
   } catch (e) {
-    // 如果是中断错误，清理临时目录
-    if (abortController.aborted || e.message.includes('aborted')) {
-      console.log(`[SteamCMD] Download aborted, cleaning up for item ${publishedFileId}...`);
-      if (!useSharedDir) {
-        try {
-          if (fs.existsSync(tempRoot)) {
-            fs.rmSync(tempRoot, { recursive: true, force: true });
-            console.log(`[SteamCMD] Cleaned up aborted download: ${tempRoot}`);
+    if (abortController.aborted || e.message.includes('aborted') || e.message.includes('取消') || e.message.includes('暂停')) {
+      
+      // 暂停，保留临时文件以供后续断点续传
+      const isPaused = options && options.task && options.task.status === 'paused';
+      
+      if (isPaused) {
+        console.log(`[SteamCMD] 任务已暂停，保留壁纸 ${publishedFileId} 的临时文件以供断点续传...`);
+      } else {
+        console.log(`[SteamCMD] 任务已被取消，正在彻底清理壁纸 ${publishedFileId} 的残留文件...`);
+        
+        const scrapDlDir = path.join(tempRoot, 'steamapps', 'workshop', 'downloads', String(appId), String(publishedFileId));
+        const scrapContentDir = path.join(tempRoot, 'steamapps', 'workshop', 'content', String(appId), String(publishedFileId));
+        
+        try { if (fs.existsSync(scrapDlDir)) fs.rmSync(scrapDlDir, { recursive: true, force: true }); } catch (err) {}
+        try { if (fs.existsSync(scrapContentDir)) fs.rmSync(scrapContentDir, { recursive: true, force: true }); } catch (err) {}
+
+        if (!useSharedDir) {
+          try {
+            if (fs.existsSync(tempRoot)) {
+              fs.rmSync(tempRoot, { recursive: true, force: true });
+              console.log(`[SteamCMD] Cleaned up aborted download tempRoot: ${tempRoot}`);
+            }
+          } catch (cleanupErr) {
+            console.warn('[SteamCMD] Failed to cleanup aborted download:', cleanupErr.message);
           }
-        } catch (cleanupErr) {
-          console.warn('[SteamCMD] Failed to cleanup aborted download:', cleanupErr.message);
         }
       }
     }
     throw e;
   }
 }
-async function handleDownload(res, id, title) {
+function findCachedItemDir(id) {
+  const sid = String(id || '').replace(/[^\d]/g, '');
+  if (!sid) return null;
+  const dir = path.join(WORKSHOP_CACHE_DIR, sid);
+  return fs.existsSync(dir) ? dir : null;
+}
+
+function findQueueItemById(id) {
+  return TASK_QUEUE.find(t => String(t.id) === String(id));
+}
+
+function findDownloadedItemPath(id) {
+  const sid = String(id || '').replace(/[^\d]/g, '');
+  if (!sid) return null;
+  const task = findQueueItemById(sid);
+  if (task && task.outputPath && fs.existsSync(task.outputPath)) return task.outputPath;
+  const cached = findCachedItemDir(sid);
+  if (cached) return cached;
+  return null;
+}
+
+function sendDownloadFile(req, res, filePath, fileName) {
+  const stat = fs.statSync(filePath);
+  res.writeHead(200, {
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': stat.size,
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    'Cache-Control': 'no-store'
+  });
+  fs.createReadStream(filePath).pipe(res);
+}
+
+async function sendPathAsClientDownload(req, res, sourcePath, title, id) {
+  if (!sourcePath || !fs.existsSync(sourcePath)) return jsonRes(res, 404, { error: 'Downloaded item not found' });
+  const st = fs.statSync(sourcePath);
+  const packageRoot = st.isFile() ? path.dirname(sourcePath) : sourcePath;
+  const tmpRoot = path.join(os.tmpdir(), 'wallhub-client-downloads');
+  ensureDir(tmpRoot);
+  const zipName = `${safeName(title || `Wallpaper ${id}`)}-${id}.zip`;
+  const zipPath = path.join(tmpRoot, `${Date.now()}-${zipName}`);
+  await zipDir(packageRoot, zipPath);
+  res.on('finish', () => { setTimeout(() => { try { fs.rmSync(zipPath, { force: true }); } catch {} }, 5000); });
+  return sendDownloadFile(req, res, zipPath, zipName);
+}
+
+async function handleClientDownload(req, res, id, title) {
   const wantId = parseInt(id);
   if (!wantId) return jsonRes(res, 400, { error: 'Invalid id' });
+  const existing = findDownloadedItemPath(wantId);
+  if (existing) return sendPathAsClientDownload(req, res, existing, title, wantId);
+
   let d = null;
   try {
     const list = await getFileDetails([String(wantId)]);
@@ -1716,56 +2063,381 @@ async function handleDownload(res, id, title) {
     return jsonRes(res, 502, { error: `Steam detail error: ${e.message}` });
   }
   if (!d) return jsonRes(res, 404, { error: '壁纸不存在或不可见' });
+  const appId = parseInt(d.consumer_appid || d.consumer_app_id || d.appid || 431960) || 431960;
+  const itemTitle = safeName(title || d.title || `Wallpaper ${wantId}`) || `Wallpaper ${wantId}`;
+  const dl = await downloadViaSteamCmd(wantId, appId, itemTitle, { videoOnly: false });
+  const sourcePath = dl.filePath;
+  res.on('finish', () => {
+    setTimeout(() => {
+      if (!dl.useSharedDir && dl.tempRoot) {
+        try { fs.rmSync(dl.tempRoot, { recursive: true, force: true }); } catch {}
+      }
+    }, 5000);
+  });
+  return sendPathAsClientDownload(req, res, sourcePath, itemTitle, wantId);
+}
+
+async function handleQueueItemDownload(req, res, id) {
+  const wantId = parseInt(id);
+  if (!wantId) return jsonRes(res, 400, { error: 'Invalid id' });
+  const sourcePath = findDownloadedItemPath(wantId);
+  const task = findQueueItemById(wantId);
+  return sendPathAsClientDownload(req, res, sourcePath, task && task.title, wantId);
+}async function handleDownload(res, id, title) {
+  const wantId = parseInt(id);
+  if (!wantId) return jsonRes(res, 400, { error: 'Invalid id' });
+  
+  if (TASK_QUEUE.some(t => t.id === wantId)) {
+    return jsonRes(res, 200, { success: true, message: '已在下载队列中' });
+  }
+
+  let d = null;
+  try {
+    const list = await getFileDetails([String(wantId)]);
+    d = list[0] && list[0].result === 1 ? list[0] : null;
+  } catch (e) {
+    return jsonRes(res, 502, { error: `Steam detail error: ${e.message}` });
+  }
+  if (!d) return jsonRes(res, 404, { error: '壁纸不存在或不可见' });
+
   const sourceUrl = String(d.file_url || '').trim();
   const appId = parseInt(d.consumer_appid || d.consumer_app_id || d.appid || 431960) || 431960;
   const isVideo = detectVideoTag(d);
-  if (!sourceUrl) {
-    try {
-      const downloaded = await downloadViaSteamCmd(wantId, appId, title || d.title, { videoOnly: isVideo });
-      if (downloaded.kind === 'file') {
-        const st = fs.statSync(downloaded.filePath);
-        const ext = extFromPath(downloaded.filePath, '.mp4');
-        res.writeHead(200, {
-          'Content-Type': mimeFromExt(ext),
-          'Content-Length': String(st.size),
-          'Content-Disposition': `attachment; filename="${encodeURIComponent(downloaded.fileName)}"; filename*=UTF-8''${encodeURIComponent(downloaded.fileName)}`,
-          'Cache-Control': 'no-store',
-        });
-        fs.createReadStream(downloaded.filePath).pipe(res);
-      } else {
-        const st = fs.statSync(downloaded.zipPath);
-        res.writeHead(200, {
-          'Content-Type': 'application/zip',
-          'Content-Length': String(st.size),
-          'Content-Disposition': `attachment; filename="${encodeURIComponent(downloaded.zipName)}"; filename*=UTF-8''${encodeURIComponent(downloaded.zipName)}`,
-          'Cache-Control': 'no-store',
-        });
-        fs.createReadStream(downloaded.zipPath).pipe(res);
-      }
-      return;
-    } catch (e) {
-      return jsonRes(res, 409, { error: `该创意工坊项目无直链，且SteamCMD方案失败: ${e.message}` });
-    }
-  }
-  let bin;
-  try {
-    bin = await GET(sourceUrl, { 'Accept': '*/*', 'Referer': `https://steamcommunity.com/sharedfiles/filedetails/?id=${wantId}` }, 30000);
-  } catch (e) {
-    return jsonRes(res, 502, { error: `下载源请求失败: ${e.message}` });
-  }
   const itemTitle = safeName(title || d.title || `Wallpaper ${wantId}`) || `Wallpaper ${wantId}`;
-  const ext = extFromUrl(sourceUrl, '.dat');
-  const fileName = `${itemTitle}-${wantId}${ext}`;
-  res.writeHead(200, {
-    'Content-Type': mimeFromExt(ext),
-    'Content-Length': String(bin.length),
-    'Content-Disposition': `attachment; filename="${encodeURIComponent(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-    'Cache-Control': 'no-store',
-  });
-  res.end(bin);
+
+  // 将任务推入队列，并立即向前端返回
+  const task = {
+    id: wantId, appId: appId, title: itemTitle, isVideo: isVideo, sourceUrl: sourceUrl,
+    status: 'pending', progress: 0, speed: 0, downloaded: 0,
+    total: parseInt(d.file_size) || 0,
+    errorMsg: '', addTime: Date.now(), coverUrl: String(d.preview_url || '')
+  };
+  TASK_QUEUE.push(task);
+  triggerQueue();
+
+  return jsonRes(res, 200, { success: true, message: '已加入下载队列，请在队列面板查看进度' });
+}
+
+// 异步后台下载循环引擎
+async function triggerQueue() {
+  if (queueProcessorRunning) return;
+  queueProcessorRunning = true;
+  
+  while (true) {
+    ACTIVE_TASK = TASK_QUEUE.find(t => t.status === 'pending');
+    if (!ACTIVE_TASK) break;
+
+    ACTIVE_TASK.status = 'downloading';
+    ACTIVE_TASK.errorMsg = '';
+    
+    try {
+      if (ACTIVE_TASK.sourceUrl) {
+        // 直链下载模式写入系统临时目录，避免在项目根目录创建 downloads。
+        const ext = extFromUrl(ACTIVE_TASK.sourceUrl, '.dat');
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wallhub-direct-'));
+        const outPath = path.join(tempRoot, `${ACTIVE_TASK.title}-${ACTIVE_TASK.id}${ext}`);
+        await downloadWithProgress(ACTIVE_TASK.sourceUrl, outPath, ACTIVE_TASK);
+        ACTIVE_TASK.outputPath = outPath;
+        
+        ACTIVE_TASK.progress = 100;
+        if (ACTIVE_TASK.total > 0) ACTIVE_TASK.downloaded = ACTIVE_TASK.total;
+        ACTIVE_TASK.status = 'moving';
+        await new Promise(r => setTimeout(r, 1000)); // 延长缓冲时间
+        
+      } else {
+        // SteamCMD 模式
+        const dl = await downloadViaSteamCmd(ACTIVE_TASK.id, ACTIVE_TASK.appId, ACTIVE_TASK.title, { videoOnly: ACTIVE_TASK.isVideo, task: ACTIVE_TASK, forceSharedDir: true });
+        
+        ACTIVE_TASK.progress = 100;
+        if (ACTIVE_TASK.total > 0) ACTIVE_TASK.downloaded = ACTIVE_TASK.total;
+        ACTIVE_TASK.status = 'moving';
+        await new Promise(r => setTimeout(r, 1000)); // 延长缓冲时间
+
+        if (dl.kind === 'file') {
+          if (ACTIVE_TASK.isVideo) {
+            ACTIVE_TASK.outputPath = dl.filePath;
+          } else {
+            ACTIVE_TASK.outputPath = dl.itemDir || dl.filePath;
+          }
+          if (!dl.useSharedDir && dl.tempRoot) try { await fs.promises.rm(dl.tempRoot, { recursive: true, force: true }); } catch (e) {}
+        }
+      }
+      
+      // 转移和清理彻底完成后，正式标记为已完成
+      if (ACTIVE_TASK.status === 'moving' || ACTIVE_TASK.status === 'transferring' || ACTIVE_TASK.status === 'downloading') {
+        ACTIVE_TASK.status = 'completed';
+        ACTIVE_TASK.progress = 100;
+        if (ACTIVE_TASK.total > 0) ACTIVE_TASK.downloaded = ACTIVE_TASK.total;
+      }
+    } catch (e) {
+      if (ACTIVE_TASK.status !== 'paused' && ACTIVE_TASK.status !== 'cancelled') {
+        ACTIVE_TASK.status = 'error';
+        ACTIVE_TASK.errorMsg = e.message;
+        ACTIVE_TASK.speed = 0;
+      }
+    }
+    ACTIVE_TASK = null;
+  }
+  queueProcessorRunning = false;
 }
 
 // ─────────────────────────────────────────────────────────────────
+function findCachedVideoById(id) {
+  const sid = String(id);
+  const fromMap = VIDEO_TASK_MAP.get(sid);
+  if (fromMap && fs.existsSync(fromMap)) return fromMap;
+  const task = TASK_QUEUE.find(t => String(t.id) === sid && t.status === 'completed' && t.outputPath);
+  if (task && fs.existsSync(task.outputPath)) return task.outputPath;
+  const itemDir = path.join(WORKSHOP_CACHE_DIR, sid);
+  const v = findFirstVideoInDir(itemDir);
+  if (v) return v;
+  return null;
+}
+
+function streamFileWithRange(req, res, filePath) {
+  const stat = fs.statSync(filePath);
+  const total = stat.size;
+  const ct = getVideoMime(filePath);
+  const range = req.headers.range;
+  if (!range) {
+    res.writeHead(200, { 'Content-Type': ct, 'Content-Length': total, 'Accept-Ranges': 'bytes' });
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+  const m = /^bytes=(\d*)-(\d*)$/i.exec(String(range).trim());
+  if (!m) return send(res, 416, 'Invalid Range');
+  let start = m[1] ? parseInt(m[1], 10) : 0;
+  let end = m[2] ? parseInt(m[2], 10) : (total - 1);
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= total) return send(res, 416, 'Range Not Satisfiable');
+  end = Math.min(end, total - 1);
+  res.writeHead(206, {
+    'Content-Type': ct,
+    'Content-Length': end - start + 1,
+    'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
+    'Accept-Ranges': 'bytes',
+  });
+  fs.createReadStream(filePath, { start, end }).pipe(res);
+}
+
+async function handleVideoPlay(res, id, title) {
+  const wantId = parseInt(id);
+  if (!wantId) return jsonRes(res, 400, { error: 'Invalid id' });
+
+  const cached = findCachedVideoById(wantId);
+  if (cached) {
+    return jsonRes(res, 200, { success: true, status: 'ready', streamUrl: '/api/video/stream?id=' + wantId });
+  }
+
+  const existing = TASK_QUEUE.find(t => String(t.id) === String(wantId));
+  if (!existing) {
+    let d = null;
+    try {
+      const list = await getFileDetails([String(wantId)]);
+      d = list[0] && list[0].result === 1 ? list[0] : null;
+    } catch (e) {
+      return jsonRes(res, 502, { error: 'Steam detail error: ' + e.message });
+    }
+    if (!d) return jsonRes(res, 404, { error: 'Wallpaper not found' });
+
+    const task = {
+      id: wantId,
+      appId: parseInt(d.consumer_appid || d.consumer_app_id || d.appid || 431960) || 431960,
+      title: safeName(title || d.title || ('Wallpaper ' + wantId)) || ('Wallpaper ' + wantId),
+      isVideo: true,
+      sourceUrl: '',
+      status: 'pending',
+      progress: 0,
+      speed: 0,
+      downloaded: 0,
+      total: parseInt(d.file_size) || 0,
+      errorMsg: '',
+      addTime: Date.now(),
+      coverUrl: String(d.preview_url || '')
+    };
+    TASK_QUEUE.push(task);
+    triggerQueue();
+  }
+
+  return jsonRes(res, 200, { success: true, status: 'queued', streamUrl: '/api/video/stream?id=' + wantId });
+}
+
+function handleVideoStream(req, res, id) {
+  const filePath = findCachedVideoById(id);
+  if (!filePath) return jsonRes(res, 404, { error: 'Video not cached yet' });
+  VIDEO_TASK_MAP.set(String(id), filePath);
+  return streamFileWithRange(req, res, filePath);
+}
+
+async function listCachedItems() {
+  ensureDir(getWorkshopContentDir(431960));
+  const items = [];
+  const root = getWorkshopContentDir(431960);
+  for (const name of fs.readdirSync(root)) {
+    const full = path.join(root, name);
+    let st;
+    try { st = fs.statSync(full); } catch { continue; }
+    if (!st.isDirectory()) continue;
+    const itemId = String(name);
+    const videoPath = findFirstVideoInDir(full);
+    let totalSize = 0;
+    const stack = [full];
+    while (stack.length) {
+      const d = stack.pop();
+      let ents = [];
+      try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+      for (const ent of ents) {
+        const fp = path.join(d, ent.name);
+        if (ent.isDirectory()) stack.push(fp);
+        else if (ent.isFile()) {
+          try { totalSize += fs.statSync(fp).size; } catch {}
+        }
+      }
+    }
+    items.push({
+      source: 'cache',
+      key: itemId,
+      id: parseInt(itemId) || itemId,
+      cacheKey: itemId,
+      appId: 431960,
+      name: itemId,
+      title: itemId,
+      size: totalSize || 0,
+      total: totalSize || 0,
+      downloaded: totalSize || 0,
+      progress: 100,
+      speed: 0,
+      mtime: st.mtimeMs || 0,
+      addTime: st.mtimeMs || 0,
+      status: 'completed',
+      type: videoPath ? 'video' : 'folder',
+      isVideo: !!videoPath,
+      canPlay: !!videoPath
+    });
+  }
+  const ids = items.map(item => String(item.id)).filter(Boolean);
+  for (const item of items) {
+    const cached = CACHED_ITEM_META.get(String(item.id));
+    if (!cached) continue;
+    Object.assign(item, cached);
+  }
+  const missingIds = ids.filter(id => !CACHED_ITEM_META.has(id));
+  if (missingIds.length) {
+    try {
+      const details = await getFileDetails(missingIds);
+      const detailMap = {};
+      for (const d of details || []) {
+        if (d && d.publishedfileid) detailMap[String(d.publishedfileid)] = d;
+      }
+      for (const item of items) {
+        const d = detailMap[String(item.id)];
+        if (!d) continue;
+        const hydrated = {
+          title: cleanText(d.title) || item.title,
+          name: cleanText(d.title) || item.name,
+          coverUrl: String(d.preview_url || ''),
+          total: parseInt(d.file_size) || item.total,
+          size: parseInt(d.file_size) || item.size,
+          isVideo: item.isVideo || detectVideoTag(d),
+        };
+        hydrated.downloaded = hydrated.total;
+        hydrated.canPlay = !!hydrated.isVideo;
+        CACHED_ITEM_META.set(String(item.id), hydrated);
+        Object.assign(item, hydrated);
+      }
+    } catch (e) {
+      console.warn('[Cache] Failed to hydrate cached item metadata:', e.message);
+    }
+  }
+  items.sort((a, b) => b.mtime - a.mtime);
+  return items;
+}
+
+async function listQueueItems() {
+  const queuedIds = new Set(TASK_QUEUE.map(t => String(t.id)));
+  const queueItems = TASK_QUEUE.map(t => Object.assign({ source: 'queue', canPlay: !!t.isVideo && t.status === 'completed' }, t));
+  const cachedItems = (await listCachedItems()).filter(item => !queuedIds.has(String(item.id)));
+  return queueItems.concat(cachedItems);
+}
+
+function handleCachedVideoStream(req, res, key) {
+  const safeKey = String(key || '').replace(/[^\d]/g, '');
+  if (!safeKey) return jsonRes(res, 400, { error: 'Invalid key' });
+  const dir = path.join(WORKSHOP_CACHE_DIR, safeKey);
+  if (!fs.existsSync(dir)) return jsonRes(res, 404, { error: 'Cached item not found' });
+  const v = findFirstVideoInDir(dir);
+  if (!v) return jsonRes(res, 404, { error: 'Cached video not found' });
+  return streamFileWithRange(req, res, v);
+}
+
+function deleteCachedItemFiles(key) {
+  const safeKey = String(key || '').replace(/[^\d]/g, '');
+  if (!safeKey) {
+    const err = new Error('Invalid key');
+    err.statusCode = 400;
+    throw err;
+  }
+  const dir = path.join(WORKSHOP_CACHE_DIR, safeKey);
+  if (!fs.existsSync(dir)) {
+    const err = new Error('Cached item not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+    CACHED_ITEM_META.delete(safeKey);
+  } catch (e) {
+    const err = new Error(`Delete failed: ${e.message}`);
+    err.statusCode = 500;
+    throw err;
+  }
+}
+
+function handleCachedItemDelete(res, key) {
+  try {
+    deleteCachedItemFiles(key);
+  } catch (e) {
+    return jsonRes(res, e.statusCode || 500, { error: e.message });
+  }
+  return jsonRes(res, 200, { success: true });
+}
+
+function deletePathIfInside(target, allowedRoots) {
+  if (!target) return;
+  const resolved = path.resolve(target);
+  const allowed = allowedRoots
+    .map(root => path.resolve(root))
+    .some(root => resolved === root || resolved.startsWith(root + path.sep));
+  if (!allowed || !fs.existsSync(resolved)) return;
+  const st = fs.statSync(resolved);
+  if (st.isDirectory()) fs.rmSync(resolved, { recursive: true, force: true });
+  else fs.rmSync(resolved, { force: true });
+}
+
+function cleanupTaskFiles(t) {
+  const targetId = String(t.id);
+  const appId = String(t.appId || 431960);
+  const wsDir = path.join(STEAM_CONFIG_DIR, 'steamapps', 'workshop');
+  const allowedRoots = [wsDir, os.tmpdir(), STEAM_CONFIG_DIR];
+
+  deletePathIfInside(t.outputPath, allowedRoots);
+  deletePathIfInside(t.filePath, allowedRoots);
+  deletePathIfInside(path.join(wsDir, 'downloads', appId, targetId), allowedRoots);
+  deletePathIfInside(path.join(wsDir, 'content', appId, targetId), allowedRoots);
+
+  const dlRoot = path.join(wsDir, 'downloads');
+  if (fs.existsSync(dlRoot)) {
+    for (const f of fs.readdirSync(dlRoot)) {
+      if (f.endsWith('.patch') && f.includes(targetId)) {
+        deletePathIfInside(path.join(dlRoot, f), allowedRoots);
+      }
+    }
+  }
+  const dlAppDir = path.join(wsDir, 'downloads', appId);
+  if (fs.existsSync(dlAppDir) && fs.readdirSync(dlAppDir).length === 0) {
+    fs.rmdirSync(dlAppDir);
+  }
+}
+
 //  Steam Login/Logout/Status APIs
 // ─────────────────────────────────────────────────────────────────
 async function handleSteamLogin(req, res) {
@@ -1820,7 +2492,12 @@ async function handleSteamLogin(req, res) {
       STEAM_CREDENTIALS.password = ''; // 持久化后不需要保存密码
       STEAM_CREDENTIALS.steamGuardCode = '';
       STEAM_CREDENTIALS.isPersistent = true; // 标记为持久化登录
-      
+
+      // 将账号存入本地 cache-settings.json，防止 Docker 重启后失忆
+      VIDEO_CACHE_SETTINGS.steamUsername = username;
+      VIDEO_CACHE_SETTINGS.steamIsPersistent = true;
+      saveCacheSettings();
+	  
       console.log(`[Steam Login] Steam Guard verified, credentials persisted for user: ${username}`);
       return jsonRes(res, 200, { 
         success: true, 
@@ -1883,6 +2560,11 @@ async function handleSteamLogin(req, res) {
     STEAM_CREDENTIALS.steamGuardCode = '';
     STEAM_CREDENTIALS.isPersistent = true; // 标记为持久化登录
 
+    // 将账号存入本地 cache-settings.json，防止 Docker 重启后失忆
+    VIDEO_CACHE_SETTINGS.steamUsername = username;
+    VIDEO_CACHE_SETTINGS.steamIsPersistent = true;
+    saveCacheSettings();
+
     console.log(`[Steam Login] Login successful for user: ${username}, credentials persisted to ${installDir}`);
     
     jsonRes(res, 200, { 
@@ -1937,6 +2619,11 @@ async function handleSteamLogout(req, res) {
   STEAM_CREDENTIALS.password = '';
   STEAM_CREDENTIALS.steamGuardCode = '';
   STEAM_CREDENTIALS.isPersistent = false;
+
+  // 同步清除本地设置中的账号
+  VIDEO_CACHE_SETTINGS.steamUsername = '';
+  VIDEO_CACHE_SETTINGS.steamIsPersistent = false;
+  saveCacheSettings();
   
   // 如果是持久化登录，尝试清理 Steam 配置文件
   if (wasPersistent && username) {
@@ -1967,279 +2654,6 @@ async function handleSteamStatus(req, res) {
     username: isLoggedIn ? STEAM_CREDENTIALS.username : null,
     isPersistent: STEAM_CREDENTIALS.isPersistent || false
   });
-}
-
-// ─────────────────────────────────────────────────────────────────
-//  Video Streaming API - 下载到本地后串流
-// ─────────────────────────────────────────────────────────────────
-const VIDEO_CACHE = new Map(); // 缓存视频文件路径
-const MAX_VIDEO_CACHE_SIZE = 100; // 最大缓存数量
-const ACTIVE_DOWNLOADS = new Map(); // 跟踪正在进行的下载
-
-// LRU 缓存管理：当缓存超过限制时，删除最旧的条目
-function addToVideoCache(id, path) {
-  if (VIDEO_CACHE.size >= MAX_VIDEO_CACHE_SIZE) {
-    // 删除最早添加的条目（Map 保持插入顺序）
-    const firstKey = VIDEO_CACHE.keys().next().value;
-    VIDEO_CACHE.delete(firstKey);
-    console.log(`[Video Cache] Removed oldest cache entry: ${firstKey}`);
-  }
-  VIDEO_CACHE.set(id, path);
-  console.log(`[Video Cache] Added to cache: ${id}, total: ${VIDEO_CACHE.size}`);
-}
-
-async function handleVideoStream(req, res, id) {
-  const wantId = parseInt(id);
-  if (!wantId) return jsonRes(res, 400, { error: 'Invalid id' });
-
-  console.log(`[Video Stream] Request for id=${wantId}`);
-
-  // 检测客户端断开连接
-  let clientDisconnected = false;
-  const onClientDisconnect = () => {
-    clientDisconnected = true;
-    console.log(`[Video Stream] Client disconnected for id=${wantId}`);
-  };
-  
-  req.on('close', onClientDisconnect);
-  req.on('aborted', onClientDisconnect);
-
-  // 先检查缓存，如果已有缓存则直接使用，无需查询 Steam API
-  let videoPath = VIDEO_CACHE.get(String(wantId));
-  
-  if (videoPath && fs.existsSync(videoPath)) {
-    console.log(`[Video Stream] Using cached video: ${videoPath}`);
-  } else {
-    // 检查是否已有相同视频正在下载
-    if (ACTIVE_DOWNLOADS.has(String(wantId))) {
-      console.log(`[Video Stream] Download already in progress for id=${wantId}, waiting...`);
-      try {
-        // 等待现有下载完成
-        videoPath = await ACTIVE_DOWNLOADS.get(String(wantId));
-        if (clientDisconnected) {
-          console.log(`[Video Stream] Client disconnected while waiting, aborting`);
-          return;
-        }
-      } catch (e) {
-        return jsonRes(res, 500, { error: `等待下载失败: ${e.message}` });
-      }
-    } else {
-      // 只有在没有缓存时才查询 Steam API
-      let d = null;
-      try {
-        const list = await getFileDetails([String(wantId)]);
-        d = list[0] && list[0].result === 1 ? list[0] : null;
-      } catch (e) {
-        return jsonRes(res, 502, { error: `Steam detail error: ${e.message}` });
-      }
-
-      if (!d) return jsonRes(res, 404, { error: '壁纸不存在或不可见' });
-
-      const appId = parseInt(d.consumer_appid || d.consumer_app_id || d.appid || 431960) || 431960;
-      const isVideo = detectVideoTag(d);
-
-      if (!isVideo) {
-        return jsonRes(res, 400, { error: '该项目不是视频类型' });
-      }
-
-      console.log(`[Video Stream] Downloading video for id=${wantId}...`);
-      
-      // 创建下载 Promise
-      const downloadPromise = (async () => {
-        try {
-          // 创建 options 对象
-          const downloadOptions = { videoOnly: true };
-          
-          // 监听客户端断开，触发下载中断
-          const abortOnDisconnect = () => {
-            if (downloadOptions.abortController) {
-              console.log(`[Video Stream] Triggering abort for id=${wantId} due to client disconnect`);
-              downloadOptions.abortController.abort();
-            }
-          };
-          req.once('close', abortOnDisconnect);
-          req.once('aborted', abortOnDisconnect);
-          
-          const downloaded = await downloadViaSteamCmd(wantId, appId, d.title, downloadOptions);
-          
-          // 如果客户端已断开，清理下载的文件
-          if (clientDisconnected && !downloaded.useSharedDir && downloaded.tempRoot) {
-            console.log(`[Video Stream] Cleaning up abandoned download for id=${wantId}`);
-            try {
-              if (fs.existsSync(downloaded.tempRoot)) {
-                fs.rmSync(downloaded.tempRoot, { recursive: true, force: true });
-              }
-            } catch (e) {
-              console.warn('[Video Stream] Failed to cleanup abandoned download:', e.message);
-            }
-            throw new Error('Client disconnected');
-          }
-          
-          if (downloaded.kind === 'file') {
-            videoPath = downloaded.filePath;
-            
-            // 直接使用下载的视频文件路径，不再复制
-            // 如果使用的是共享目录（持久化登录），文件会保留在 workshop 目录
-            // 如果使用的是临时目录（匿名下载），文件会在使用后被清理
-            addToVideoCache(String(wantId), videoPath);
-            console.log(`[Video Stream] Video ready at: ${videoPath}`);
-            
-            // 如果使用的是临时目录，需要在响应结束后清理
-            if (!downloaded.useSharedDir && downloaded.tempRoot) {
-              const cleanupHandler = () => {
-                setTimeout(() => {
-                  try {
-                    if (fs.existsSync(downloaded.tempRoot)) {
-                      fs.rmSync(downloaded.tempRoot, { recursive: true, force: true });
-                      console.log(`[Video Stream] Cleaned up temp dir: ${downloaded.tempRoot}`);
-                      // 清理缓存引用
-                      VIDEO_CACHE.delete(String(wantId));
-                    }
-                  } catch (e) {
-                    console.warn('[Video Stream] Failed to cleanup temp dir:', e.message);
-                  }
-                }, 5000); // 延迟5秒清理，确保传输完成
-              };
-              
-              // 使用 once 而不是 on，避免重复监听
-              res.once('finish', cleanupHandler);
-              res.once('close', cleanupHandler);
-            }
-            
-            return videoPath;
-          } else {
-            throw new Error('无法获取视频文件');
-          }
-        } finally {
-          // 下载完成或失败后，从活动下载列表中移除
-          ACTIVE_DOWNLOADS.delete(String(wantId));
-        }
-      })();
-      
-      // 将下载 Promise 添加到活动下载列表
-      ACTIVE_DOWNLOADS.set(String(wantId), downloadPromise);
-      
-      try {
-        videoPath = await downloadPromise;
-        if (clientDisconnected) {
-          console.log(`[Video Stream] Client disconnected after download, aborting stream`);
-          return;
-        }
-      } catch (e) {
-        console.error('[Video Stream Download Error]', e.message);
-        // 如果是客户端断开导致的错误，不返回错误响应
-        if (clientDisconnected || e.message.includes('aborted') || e.message.includes('killed')) {
-          console.log(`[Video Stream] Download interrupted for id=${wantId}`);
-          return;
-        }
-        return jsonRes(res, 409, { error: `视频下载失败: ${e.message}` });
-      }
-    }
-  }
-
-  // 如果客户端已断开，不再串流
-  if (clientDisconnected) {
-    console.log(`[Video Stream] Client disconnected, skipping stream`);
-    return;
-  }
-
-  // 串流视频文件
-  try {
-    const stat = fs.statSync(videoPath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-    const videoType = mimeFromExt(extFromPath(videoPath, '.mp4'));
-
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunkSize = (end - start) + 1;
-      
-      console.log(`[Video Stream] Range request: ${start}-${end}/${fileSize}`);
-      
-      // 优化：使用较小的 highWaterMark 减少内存占用
-      const stream = fs.createReadStream(videoPath, { 
-        start, 
-        end, 
-        highWaterMark: 256 * 1024 // 256KB chunks instead of 1MB
-      });
-
-      res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
-        'Content-Type': videoType,
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=3600'
-      });
-      
-      stream.pipe(res);
-      
-      // 清理流资源
-      const cleanup = () => {
-        if (!stream.destroyed) {
-          stream.destroy();
-          console.log(`[Video Stream] Stream destroyed for id=${wantId}`);
-        }
-      };
-      
-      stream.on('error', (err) => {
-        console.error('[Video Stream] Stream error:', err.message);
-        cleanup();
-        if (!res.headersSent) {
-          res.writeHead(500);
-          res.end('Stream error');
-        }
-      });
-      
-      // 确保流在响应结束后被销毁
-      res.on('close', cleanup);
-      res.on('finish', cleanup);
-      stream.on('end', cleanup);
-    } else {
-      console.log(`[Video Stream] Full file request: ${fileSize} bytes`);
-      
-      res.writeHead(200, {
-        'Content-Length': fileSize,
-        'Content-Type': videoType,
-        'Accept-Ranges': 'bytes',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=3600'
-      });
-      
-      // 优化：使用较小的 highWaterMark 减少内存占用
-      const stream = fs.createReadStream(videoPath, { 
-        highWaterMark: 256 * 1024 // 256KB chunks instead of 1MB
-      });
-      stream.pipe(res);
-      
-      // 清理流资源
-      const cleanup = () => {
-        if (!stream.destroyed) {
-          stream.destroy();
-          console.log(`[Video Stream] Stream destroyed for id=${wantId}`);
-        }
-      };
-      
-      stream.on('error', (err) => {
-        console.error('[Video Stream] Stream error:', err.message);
-        cleanup();
-        if (!res.headersSent) {
-          res.writeHead(500);
-          res.end('Stream error');
-        }
-      });
-      
-      // 确保流在响应结束后被销毁
-      res.on('close', cleanup);
-      res.on('finish', cleanup);
-      stream.on('end', cleanup);
-    }
-  } catch (e) {
-    console.error('[Video Stream Error]', e.message);
-    return jsonRes(res, 500, { error: `视频串流失败: ${e.message}` });
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -2306,6 +2720,19 @@ const server = http.createServer(async (req, res) => {
     if (pn==='/health')                                    { send(res,200,'ok'); return; }
     if (pn==='/favicon.ico')                               { res.writeHead(204, { 'Cache-Control':'public, max-age=604800' }); res.end(); return; }
     if (pn==='/api/debug')                                 { await handleDebug(res); return; }
+    if (pn==='/api/server/runtime' && req.method==='GET')  {
+      const docker = isDockerLikeEnv();
+      return jsonRes(res, 200, {
+        platform: process.platform,
+        docker,
+        canRestart: process.platform !== 'win32'
+      });
+    }
+    if (pn==='/api/server/restart' && req.method==='POST') {
+      const result = await restartServer();
+      jsonRes(res, 200, { success: true, message: result.mode === 'exit' ? '服务端正在退出，请由 Docker 重启策略拉起' : '服务端正在重启', mode: result.mode });
+      return;
+    }
     if (pn==='/api/steam/query' && req.method==='POST')    { await handleQuery(req,res); return; }
     if (pn==='/api/steam/details' && req.method==='GET')   {
       const id = new URL(req.url,'http://x').searchParams.get('id');
@@ -2317,7 +2744,128 @@ const server = http.createServer(async (req, res) => {
       const id = q.get('id');
       const title = q.get('title') || `Wallpaper ${id}`;
       if (!id) return jsonRes(res,400,{error:'Missing id'});
+      await handleClientDownload(req, res, id, title); return;
+    }
+    if (pn==='/api/download/background' && req.method==='GET') {
+      const q = new URL(req.url,'http://x').searchParams;
+      const id = q.get('id');
+      const title = q.get('title') || `Wallpaper ${id}`;
+      if (!id) return jsonRes(res,400,{error:'Missing id'});
       await handleDownload(res, id, title); return;
+    }
+    if (pn==='/api/video/play' && req.method==='GET') {
+      const q = new URL(req.url,'http://x').searchParams;
+      const id = q.get('id');
+      const title = q.get('title') || `Wallpaper ${id}`;
+      if (!id) return jsonRes(res,400,{error:'Missing id'});
+      await handleVideoPlay(res, id, title); return;
+    }
+    if (pn==='/api/video/stream' && req.method==='GET') {
+      const id = new URL(req.url,'http://x').searchParams.get('id');
+      if (!id) return jsonRes(res,400,{error:'Missing id'});
+      handleVideoStream(req, res, id); return;
+    }
+    if (pn==='/api/cache/list' && req.method==='GET') {
+      return jsonRes(res, 200, { items: await listCachedItems() });
+    }
+    if (pn==='/api/cache/video/stream' && req.method==='GET') {
+      const key = new URL(req.url,'http://x').searchParams.get('key');
+      if (!key) return jsonRes(res, 400, { error: 'Missing key' });
+      return handleCachedVideoStream(req, res, key);
+    }
+    if (pn==='/api/cache/item' && req.method==='DELETE') {
+      const key = new URL(req.url,'http://x').searchParams.get('key');
+      if (!key) return jsonRes(res, 400, { error: 'Missing key' });
+      return handleCachedItemDelete(res, key);
+    }
+	if (pn==='/api/queue' && req.method==='GET') {
+      return jsonRes(res, 200, { tasks: await listQueueItems(), rxSpeed: Math.max(0, currentRxSpeed) });
+    }
+    if (pn==='/api/queue/action' && req.method==='POST') {
+      const { action, id } = JSON.parse(await readBody(req));
+      if (action === 'clear_completed') {
+        for (let i = TASK_QUEUE.length - 1; i >= 0; i--) {
+          const t = TASK_QUEUE[i];
+          if (t.status === 'completed' || t.status === 'error') {
+            try { cleanupTaskFiles(t); }
+            catch (e) { console.error('[Cleanup] 清理完成/失败任务文件失败:', e); }
+            TASK_QUEUE.splice(i, 1);
+          }
+        }
+        const queuedIds = new Set(TASK_QUEUE.map(t => String(t.id)));
+        for (const item of await listCachedItems()) {
+          if (!queuedIds.has(String(item.id))) {
+            try { deleteCachedItemFiles(item.cacheKey || item.id); }
+            catch (e) { console.error('[Cleanup] 清理缓存项目失败:', e); }
+          }
+        }
+        return jsonRes(res, 200, { success: true });
+      }
+
+      // 全部暂停
+      if (action === 'pause_all') {
+        for (const t of TASK_QUEUE) {
+          if (t.status === 'downloading') {
+            t.status = 'paused'; t.speed = 0;
+            if (t.processPromise && t.processPromise.kill) t.processPromise.kill();
+            if (t.cancelFn) t.cancelFn();
+          } else if (t.status === 'pending') {
+            t.status = 'paused';
+          }
+        }
+        return jsonRes(res, 200, { success: true });
+      }
+
+      // 全部开始
+      if (action === 'resume_all') {
+        for (const t of TASK_QUEUE) {
+          if (t.status === 'paused' || t.status === 'error') {
+            t.status = 'pending';
+          }
+        }
+        triggerQueue(); // 唤醒下载引擎
+        return jsonRes(res, 200, { success: true });
+      }
+
+      if (action === 'delete_cache') {
+        const key = String(id || '').replace(/[^\d]/g, '');
+        if (!key) return jsonRes(res, 400, { error: 'Invalid key' });
+        return handleCachedItemDelete(res, key);
+      }
+
+      const idx = TASK_QUEUE.findIndex(t => String(t.id) === String(id));
+      if (idx === -1) return jsonRes(res, 404, { error: '未找到任务' });
+      const t = TASK_QUEUE[idx];
+      
+      if (action === 'pause' && t.status === 'downloading') {
+        t.status = 'paused'; t.speed = 0; // 改变状态为暂停，防止触发错误重试
+        if (t.processPromise && t.processPromise.kill) t.processPromise.kill();
+        if (t.cancelFn) t.cancelFn();
+      } else if (action === 'pause' && t.status === 'pending') {
+        t.status = 'paused';
+      } else if (action === 'resume' && (t.status === 'paused' || t.status === 'error')) {
+        t.status = 'pending'; triggerQueue();
+      } else if (action === 'cancel' || action === 'delete') {
+        if (t.status === 'downloading') {
+          t.status = 'cancelled'; // 显式标记为取消状态
+          if (t.processPromise && t.processPromise.kill) t.processPromise.kill();
+          if (t.cancelFn) t.cancelFn();
+        }
+        
+        // 清理 SteamCMD 产生的临时目录和 patch 残留文件
+        try {
+          cleanupTaskFiles(t);
+        } catch (e) {
+          console.error('[Cleanup] 删除任务时清理残留文件失败:', e);
+        }
+        
+        TASK_QUEUE.splice(idx, 1);
+      } else if (action === 'up' && idx > 0) {
+        [TASK_QUEUE[idx-1], TASK_QUEUE[idx]] = [TASK_QUEUE[idx], TASK_QUEUE[idx-1]];
+      } else if (action === 'down' && idx < TASK_QUEUE.length - 1) {
+        [TASK_QUEUE[idx], TASK_QUEUE[idx+1]] = [TASK_QUEUE[idx+1], TASK_QUEUE[idx]];
+      }
+      return jsonRes(res, 200, { success: true });
     }
     if (pn==='/api/steam/login' && req.method==='POST') {
       await handleSteamLogin(req, res); return;
@@ -2328,29 +2876,16 @@ const server = http.createServer(async (req, res) => {
     if (pn==='/api/steam/status' && req.method==='GET') {
       await handleSteamStatus(req, res); return;
     }
-    if (pn==='/api/video/stream' && req.method==='GET') {
-      const q = new URL(req.url,'http://x').searchParams;
-      const id = q.get('id');
-      if (!id) return jsonRes(res,400,{error:'Missing id'});
-      await handleVideoStream(req, res, id); return;
-    }
+    
     if (pn==='/api/video/cache/settings' && req.method==='GET') {
       jsonRes(res, 200, {
-        cacheDays: VIDEO_CACHE_SETTINGS.cacheDays,
         steamApiKey: VIDEO_CACHE_SETTINGS.steamApiKey || '',
         useSteamApi: !!VIDEO_CACHE_SETTINGS.useSteamApi
       }); return;
     }
     if (pn==='/api/video/cache/settings' && req.method==='POST') {
       try {
-        const body = await readBody(req);
-        const data = JSON.parse(body);
-        if (typeof data.cacheDays === 'number') {
-          if (data.cacheDays < 1 || data.cacheDays > 365) {
-            return jsonRes(res, 400, { error: 'Invalid cacheDays value' });
-          }
-          VIDEO_CACHE_SETTINGS.cacheDays = data.cacheDays;
-        }
+        const data = JSON.parse(await readBody(req));
         if (Object.prototype.hasOwnProperty.call(data, 'steamApiKey')) {
           VIDEO_CACHE_SETTINGS.steamApiKey = String(data.steamApiKey || '').trim();
         }
@@ -2360,97 +2895,11 @@ const server = http.createServer(async (req, res) => {
         saveCacheSettings();
         jsonRes(res, 200, {
           success: true,
-          cacheDays: VIDEO_CACHE_SETTINGS.cacheDays,
           steamApiKey: VIDEO_CACHE_SETTINGS.steamApiKey || '',
           useSteamApi: !!VIDEO_CACHE_SETTINGS.useSteamApi
         });
       } catch (e) {
         jsonRes(res, 400, { error: 'Invalid JSON' });
-      }
-      return;
-    }
-    if (pn==='/api/video/cache/clear' && req.method==='POST') {
-      try {
-        let deletedCount = 0;
-        if (fs.existsSync(WORKSHOP_CACHE_DIR)) {
-          const items = fs.readdirSync(WORKSHOP_CACHE_DIR);
-          for (const item of items) {
-            const itemPath = path.join(WORKSHOP_CACHE_DIR, item);
-            try {
-              const stats = fs.statSync(itemPath);
-              if (stats.isDirectory()) {
-                fs.rmSync(itemPath, { recursive: true, force: true });
-                deletedCount++;
-              }
-            } catch (e) {
-              console.warn(`[Cache] Failed to delete ${item}:`, e.message);
-            }
-          }
-        }
-        // 清理内存缓存
-        VIDEO_CACHE.clear();
-        console.log(`[Cache] Manually cleared ${deletedCount} workshop items and memory cache`);
-        
-        // 触发垃圾回收
-        if (global.gc) {
-          global.gc();
-          console.log('[Cache] Triggered garbage collection');
-        }
-        
-        jsonRes(res, 200, { success: true, deletedCount });
-      } catch (e) {
-        console.error('[Cache] Clear failed:', e);
-        jsonRes(res, 500, { error: e.message });
-      }
-      return;
-    }
-    if (pn==='/api/memory/status' && req.method==='GET') {
-      try {
-        const memUsage = process.memoryUsage();
-        jsonRes(res, 200, {
-          heapUsed: memUsage.heapUsed,
-          heapTotal: memUsage.heapTotal,
-          rss: memUsage.rss,
-          external: memUsage.external,
-          heapUsedMB: (memUsage.heapUsed / 1024 / 1024).toFixed(2),
-          heapTotalMB: (memUsage.heapTotal / 1024 / 1024).toFixed(2),
-          rssMB: (memUsage.rss / 1024 / 1024).toFixed(2),
-          videoCacheSize: VIDEO_CACHE.size,
-          videoCacheLimit: MAX_VIDEO_CACHE_SIZE
-        });
-      } catch (e) {
-        jsonRes(res, 500, { error: e.message });
-      }
-      return;
-    }
-    if (pn==='/api/memory/gc' && req.method==='POST') {
-      try {
-        if (global.gc) {
-          const before = process.memoryUsage();
-          global.gc();
-          const after = process.memoryUsage();
-          const freed = (before.heapUsed - after.heapUsed) / 1024 / 1024;
-          console.log(`[Memory] Manual GC freed ${freed.toFixed(2)}MB`);
-          jsonRes(res, 200, { 
-            success: true, 
-            freedMB: freed.toFixed(2),
-            before: {
-              heapUsedMB: (before.heapUsed / 1024 / 1024).toFixed(2),
-              heapTotalMB: (before.heapTotal / 1024 / 1024).toFixed(2)
-            },
-            after: {
-              heapUsedMB: (after.heapUsed / 1024 / 1024).toFixed(2),
-              heapTotalMB: (after.heapTotal / 1024 / 1024).toFixed(2)
-            }
-          });
-        } else {
-          jsonRes(res, 400, { 
-            error: 'GC not available. Start with --expose-gc flag',
-            hint: 'node --expose-gc server.js'
-          });
-        }
-      } catch (e) {
-        jsonRes(res, 500, { error: e.message });
       }
       return;
     }
@@ -2474,51 +2923,25 @@ server.listen(PORT,'0.0.0.0',()=>{
   // 确保 Steam 配置目录存在
   ensureSteamConfigDir();
   
-  // 初始化 Steam 凭据（检测持久化登录）
-  initializeSteamCredentials();
-  
   // 加载缓存设置
   loadCacheSettings();
   
-  // 启动定时清理任务（每小时检查一次）
-  setInterval(() => {
-    cleanOldCacheFiles();
-  }, 60 * 60 * 1000);
+  // 初始化 Steam 凭据（检测持久化登录）
+  initializeSteamCredentials();
   
-  // 启动时清理一次
-  setTimeout(() => {
-    cleanOldCacheFiles();
-  }, 5000);
-  
-  // 内存监控和定期垃圾回收（每 10 分钟）
-  setInterval(() => {
-    const memUsage = process.memoryUsage();
-    const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
-    const heapTotalMB = (memUsage.heapTotal / 1024 / 1024).toFixed(2);
-    const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
-    
-    console.log(`[Memory] Heap: ${heapUsedMB}MB / ${heapTotalMB}MB, RSS: ${rssMB}MB, Cache: ${VIDEO_CACHE.size} videos`);
-    
-    // 如果堆内存使用超过 500MB，触发垃圾回收
-    if (memUsage.heapUsed > 500 * 1024 * 1024) {
-      console.log('[Memory] High memory usage detected, triggering GC...');
-      if (global.gc) {
-        global.gc();
-        console.log('[Memory] GC completed');
-      } else {
-        console.log('[Memory] GC not available. Start with --expose-gc flag to enable manual GC');
-      }
-    }
-  }, 10 * 60 * 1000);
-  
-  // 启动时输出内存信息
-  setTimeout(() => {
-    const memUsage = process.memoryUsage();
-    console.log(`  💾 Memory : ${(memUsage.heapUsed / 1024 / 1024).toFixed(2)}MB / ${(memUsage.heapTotal / 1024 / 1024).toFixed(2)}MB\n`);
-  }, 1000);
 });
 server.on('error',err=>{
   if(err.code==='EADDRINUSE') console.error(`\n❌ 端口 ${PORT} 已占用\n`);
   else console.error('\n❌',err.message);
   process.exit(1);
 });
+
+
+
+
+
+
+
+
+
+

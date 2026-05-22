@@ -14,7 +14,7 @@
 https://github.com/0ran/wallpaper-engine-download-web  
 https://github.com/TulpaMavis/wallpaper-engine-download-web
 
-此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，可能稍有遗漏。注意，下面部分内容为 AI 编写，注意目前仍有一些未完善和小 BUG，但基本不影响使用
+此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，Docker 环境下稍微比 Windows 兼容更多些，可能稍有遗漏。注意，下面部分内容为 AI 编写，注意目前仍有一些未完善和小 BUG，但基本不影响使用
 
 ### 以下是作者原话：
 注：根据用户使用猖獗性而定，如有必要后期只留视频下载选项 如非必要则保持现状。 【本项目仅应急娱乐使用 不要视作为破解的理由】
@@ -46,15 +46,17 @@ https://github.com/TulpaMavis/wallpaper-engine-download-web
 
 原项目的功能特色再此不重复：
 
-- **Steam 网页账号登录**：支持直接在网页登录 Steam 账号，同时支持邮箱验证码，登录下载需要权限的壁纸
+- **Steam 网页账号登录**：支持直接在网页登录 Steam 账号，同时支持邮箱验证码，登录下载需要权限的壁纸，以及固化登录状态
 - **Steam API 支持**：支持输入自己的Steam API，输入并保存，点击按钮启用，此时刷新列表后会支持获取完整的Wallpaper列表
 - **在线视频播放**：视频类壁纸可直接在浏览器中播放，观看设备无需下载（服务端会下载后串流给客户端播放，缓存可以清理）
-- **自动打包规则**：
-  - **场景/程序/网页类壁纸**：下载后自动打包为 `.zip` 压缩包
-  - **视频类壁纸**：直接提取原始视频文件（.mp4等），可直接播放
+- **下载队列管理**：你可以将Wallpaper项目添加至后台下载/直接播放/打包下载，除了打包，其余操作进度都会在此展示，完成后你可以进行管理
+- **订阅后打包下载**：
+  - **场景/程序/网页类壁纸**：当点击"订阅"后，下载至服务端打包成 `.zip` 压缩包发送到客户端下载;当点击"添加后台下载"，则仅下载到服务端本地（需要批量下载时可如此操作）
+  - **视频类壁纸**：当点击"订阅"后，下载至服务端打包成 `.zip` 压缩包发送到客户端下载;当点击"稍后再看"，则仅下载到服务端本地（需要批量下载时可如此操作），当点击"播放视频"时则直接加载播放界面准备播放，同时显示进度
+- **网页服务端重启（仅Docker）**：你可以在设置中重启服务端
 
 ## 截图展示
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/cd5843fe-7bf5-4cc7-9966-0cd8f42bdbeb" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/d83e4964-ec5c-4bc5-9538-6819f9706494" />
 <img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5e47fc7e-d979-48d1-adb9-966c0b5dcc77" />
 <img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5ee3adba-31e9-42c3-bad1-46b3703c0722" />
 </br></br>
@@ -75,22 +77,16 @@ https://github.com/TulpaMavis/wallpaper-engine-download-web
 
 1. **Node.js**：请确保设备已安装 Node.js (v16 或更高版本)
 2. **网络访问（按地区）**：是否需要代理取决于你的网络环境。若你所在地区可直连 Steam 创意工坊则无需代理；若访问受限，再开启系统代理或配置代理环境变量
-3. **SteamCMD**：程序启动时会自动尝试查找或下载 SteamCMD。如果失败，请检查网络或手动下载 SteamCMD 放入 `steamcmd` 目录
+3. **SteamCMD**：程序启动/调用 SteamCMD 时会自动尝试查找或下载 SteamCMD。如果失败，请检查网络或手动下载 SteamCMD 放入 `steamcmd` 目录
 
 ## 快速开始
-
-`PS`：**第一次使用需要在线下载SteamCMD，你需要点击网页右上角用户图标，输入账号密码触发下载**
 
 ### Windows
 
 1. **下载**本项目代码
 2. **启动服务**：
    ```bash
-   # 标准启动
    node server.js
-   
-   # 推荐：启用手动垃圾回收（优化内存管理）
-   node --expose-gc server.js
    ```
 3. **访问网页**：在浏览器打开 `http://localhost:3090`  
 
@@ -106,7 +102,7 @@ https://github.com/TulpaMavis/wallpaper-engine-download-web
 # 基础镜像
 FROM node:18-slim
 
-# 安装 SteamCMD 依赖
+# 安装 SteamCMD 依赖、zip 和 unzip
 RUN apt-get update && \
     dpkg --add-architecture i386 && \
     apt-get update && \
@@ -119,6 +115,8 @@ RUN apt-get update && \
         libc6-i386 \
         libcurl4-gnutls-dev:i386 \
         lib32z1 \
+        zip \
+        unzip \
         && \
     rm -rf /var/lib/apt/lists/*
 
@@ -164,7 +162,7 @@ services:
       - "3090:3090"
     # 环境变量
     #environment:
-      #- NODE_ENV=production
+      #- HTTP_PROXY=你的HTTP代理地址
       # 可以根据需要添加其他环境变量
       # - STEAM_USERNAME=your_username
       # - STEAM_PASSWORD=your_password
@@ -176,24 +174,22 @@ services:
     # 工作目录
     working_dir: /app
     # 启动命令（如果需要覆盖 Dockerfile 中的 CMD）
-    command: node --expose-gc server.js
+    command: node server.js
     # 或者使用 nodemon 进行开发
-    # command: nodemon --expose-gc server.js
+    # command: nodemon server.js
     # 网络模式
-    networks:
-      - app-network
-
-# 自定义网络
-networks:
-  app-network:
-    driver: bridge
+    network_mode: host
+    deploy:
+      resources:
+        limits:
+          #cpus: '2'
+          memory: 500M
 ```
 
 4. 运行构建命令：
     ```
     docker-compose up -d
     ```
-   或者你是图形化 NAS 界面则手动在 web 界面选中 dockerfile 和 docker-compose 所在的路径
    
 6. **访问网页**：在浏览器打开 `http://localhost:3090` 
 
@@ -210,7 +206,7 @@ networks:
 4. 登录成功后，按钮变为绿色，显示已登录状态
 
 #### 退出登录
-- 点击绿色用户图标按钮
+- 设置中点击用户卡片退出账号
 - 确认退出后，清除登录状态和持久化文件
 
 ## 高级配置
@@ -229,4 +225,4 @@ networks:
 
 ## 开发声明
 
-本项目全程依托人工智能辅助完成构建。发布者未审阅、未编写任何一行代码内容；若与其他项目存在代码雷同，均属巧合。仅供学习交流使用。
+本项目全程依托人工智能辅助完成构建。发布者未审阅、未编写任何一行代码内容；若与其他项目存在代码雷同，那就是我抄了，仅供学习交流使用。
