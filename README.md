@@ -56,13 +56,13 @@ https://github.com/TulpaMavis/wallpaper-engine-download-web
 - **网页服务端重启（仅Docker）**：你可以在设置中重启服务端
 
 ## 截图展示
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/d83e4964-ec5c-4bc5-9538-6819f9706494" />
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5e47fc7e-d979-48d1-adb9-966c0b5dcc77" />
-<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/5ee3adba-31e9-42c3-bad1-46b3703c0722" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/a7172104-95f1-49f9-a9e2-9773dfed78d4" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/2aaafca8-4a49-41ae-a375-a9233999b124" />
+<img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/6b3b6a24-7368-4f61-b15b-fbbc40aa908c" />
 </br></br>
-<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/9193144f-783f-42b0-8760-58994192e6aa" />
-<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/3862613b-048a-48aa-a499-2b8e069a2538" />
-<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/5d0e0b19-b2fb-4ef5-855a-599c44015006" />
+<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/f79a6d0e-9c40-46ff-8f12-931e2a79fbb9" />
+<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/69728bf1-8c0f-424d-bf81-4011a10e1409" />
+<img width="32%" height="32%" alt="image" src="https://github.com/user-attachments/assets/029cc462-993c-4e28-88a9-e2ac3112ce24" />
 </br></br>
 
 ## 技术架构
