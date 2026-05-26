@@ -3143,7 +3143,8 @@ body.theme-light .head-settings-btn:hover {
     gap: 8px;
   }
   .q-actions {
-    justify-content: flex-start;
+    justify-content: flex-end;
+    align-self: flex-end;
   }
   .q-btn {
     min-height: 27px;
