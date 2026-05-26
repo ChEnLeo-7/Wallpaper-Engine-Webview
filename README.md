@@ -1,6 +1,6 @@
 # Wallpaper Engine 创意工坊下载工具
 
-> 免登录下载 Wallpaper Engine 创意工坊壁纸，支持 Steam 账号登录和在线视频播放。
+> 一个 Web 版 Wallpaper Engine 创意工坊壁纸，支持 Steam 账号登录和在线视频播放。
 
 <p align="center">
   <a href="./README.en.md">English</a>
@@ -8,52 +8,35 @@
   <a href="./README.md">简体中文</a>
 </p>
 
-## 关于二改作者的话
+## 关于参考
 
-参考的项目：  
-https://github.com/0ran/wallpaper-engine-download-web  
-https://github.com/TulpaMavis/wallpaper-engine-download-web
 
-此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，Docker 环境下稍微比 Windows 兼容更多些，可能稍有遗漏。注意，下面部分内容为 AI 编写，注意目前仍有一些未完善和小 BUG，但基本不影响使用
+> 参考的项目：  
+> https://github.com/0ran/wallpaper-engine-download-web  （原作者）
+> https://github.com/TulpaMavis/wallpaper-engine-download-web  （二改作者 & Docker适配）
 
-### 以下是作者原话：
-注：根据用户使用猖獗性而定，如有必要后期只留视频下载选项 如非必要则保持现状。 【本项目仅应急娱乐使用 不要视作为破解的理由】
+此项目从上流项目 [0ran/wallpaper-engine-download-web](https://github.com/0ran/wallpaper-engine-download-web) Fork 而来，后基于 [TulpaMavis/wallpaper-engine-download-web](https://github.com/TulpaMavis/wallpaper-engine-download-web) 利用 AI 编程做了点自己中意的个性化需求，目前在 FNOS 的 Docker 和 Windows 上通过测试，Docker 环境下稍微比 Windows 兼容更多些，可能稍有遗漏。注意，下面部分内容为 AI 编写，注意目前仍有一些未完善和小 BUG，但基本不影响使用
 
-## 项目徽章
-
-[![version](https://img.shields.io/badge/version-4.3.0-3fb950?style=flat-square)](https://semver.org/)
-[![node](https://img.shields.io/badge/node-%3E%3D16-43853d?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![runtime](https://img.shields.io/badge/runtime-Node.js-5fa04e?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/en/about)
-[![downloader](https://img.shields.io/badge/downloader-SteamCMD-1b2838?style=flat-square&logo=steam&logoColor=white)](https://developer.valvesoftware.com/wiki/SteamCMD)
-[![frontend](https://img.shields.io/badge/frontend-Vanilla%20JS-f7df1e?style=flat-square&logo=javascript&logoColor=000)](https://developer.mozilla.org/docs/Web/JavaScript)
-[![dependency](https://img.shields.io/badge/dependency-zero-0ea5e9?style=flat-square)](https://nodejs.org/docs/latest/api/)
-
-## 技术栈展示
-
-<p>
-  <a href="https://nodejs.org/" target="_blank" rel="noopener noreferrer"><img src="https://skillicons.dev/icons?i=nodejs" alt="Node.js" /></a>
-  <a href="https://developer.valvesoftware.com/wiki/SteamCMD" target="_blank" rel="noopener noreferrer"><img src="https://cdn.simpleicons.org/steam/ffffff" alt="SteamCMD" width="48" height="48" /></a>
-  <a href="https://developer.mozilla.org/" target="_blank" rel="noopener noreferrer"><img src="https://skillicons.dev/icons?i=js,html,css" alt="JavaScript, HTML, CSS" /></a>
-</p>
 
 ## 项目简介
 
 本项目是一个基于 Web 的 Steam 创意工坊下载工具，专为 Wallpaper Engine 设计。它通过网页界面提供壁纸搜索、在线播放和下载功能。
 
-**核心优势**：利用 **SteamCMD** 的匿名登录特性，无需登录个人 Steam 账号即可下载大部分公开的壁纸资源。（作者PS：实测匿名下载大部分好像都不行，最好登录Steam账号😅）
+**核心优势**：部署好在服务端，客户端无需下载即可网页串流播放 Wallpaper 视频项目，也可以打包下载，服务端支持 Steam 账号登录、Steam API Key 支持（获得更全的 Wallpaper 项目）、下载队列管理
 
 ## 二改特色
 
 原项目的功能特色再此不重复：
 
-- **Steam 网页账号登录**：支持直接在网页登录 Steam 账号，同时支持邮箱验证码，登录下载需要权限的壁纸，以及固化登录状态
-- **Steam API 支持**：支持输入自己的Steam API，输入并保存，点击按钮启用，此时刷新列表后会支持获取完整的Wallpaper列表
-- **在线视频播放**：视频类壁纸可直接在浏览器中播放，观看设备无需下载（服务端会下载后串流给客户端播放，缓存可以清理）
-- **下载队列管理**：你可以将Wallpaper项目添加至后台下载/直接播放/打包下载，除了打包，其余操作进度都会在此展示，完成后你可以进行管理
-- **订阅后打包下载**：
+- **👤Steam 网页账号登录**：支持直接在网页登录 Steam 账号，同时支持邮箱验证码，登录下载需要权限的壁纸，以及固化登录状态
+- **🔑Steam API 支持**：支持输入自己的Steam API，输入并保存，点击按钮启用，此时刷新列表后会支持获取完整的Wallpaper列表
+- **📺在线视频播放**：视频类壁纸可直接在浏览器中播放，观看设备无需下载（服务端会下载后串流给客户端播放，缓存可以清理）
+- **⬇️下载队列管理**：你可以将Wallpaper项目添加至后台下载/直接播放/打包下载，除了打包，其余操作进度都会在此展示，完成后你可以进行管理
+- **📦订阅后打包下载**：
   - **场景/程序/网页类壁纸**：当点击"订阅"后，下载至服务端打包成 `.zip` 压缩包发送到客户端下载;当点击"添加后台下载"，则仅下载到服务端本地（需要批量下载时可如此操作）
   - **视频类壁纸**：当点击"订阅"后，下载至服务端打包成 `.zip` 压缩包发送到客户端下载;当点击"稍后再看"，则仅下载到服务端本地（需要批量下载时可如此操作），当点击"播放视频"时则直接加载播放界面准备播放，同时显示进度
-- **网页服务端重启（仅Docker）**：你可以在设置中重启服务端
+- **🔃网页服务端重启（仅Docker）**：你可以在设置中重启服务端
+- **⭐️页面动效**：在部分界面中，增加了一些动效丰富视觉
 
 ## 截图展示
 <img width="1920" height="957" alt="image" src="https://github.com/user-attachments/assets/a7172104-95f1-49f9-a9e2-9773dfed78d4" />
@@ -77,6 +60,7 @@ https://github.com/TulpaMavis/wallpaper-engine-download-web
 
 1. **Node.js**：请确保设备已安装 Node.js (v16 或更高版本)
 2. **网络访问（按地区）**：是否需要代理取决于你的网络环境。若你所在地区可直连 Steam 创意工坊则无需代理；若访问受限，再开启系统代理或配置代理环境变量
+> 如需 Docker/Linux 免代理访问可以下载隔壁项目的 [Steamcommunity_302](https://github.com/TulpaMavis/wallpaper-engine-download-web/tree/main/wallpaper-webview/Steamcommunity_302)，进一步配置请查看 [docker-compose.yml](https://github.com/TulpaMavis/wallpaper-engine-download-web/blob/main/wallpaper-webview/docker-compose.yml)
 3. **SteamCMD**：程序启动/调用 SteamCMD 时会自动尝试查找或下载 SteamCMD。如果失败，请检查网络或手动下载 SteamCMD 放入 `steamcmd` 目录
 
 ## 快速开始
@@ -223,6 +207,26 @@ services:
 | `STEAM_COUNTRY` | 商店地区代码 | - |
 | `STEAM_LANG` | 语言设置 | `schinese` |
 
-## 开发声明
+## 开发声明&免责声明
 
-本项目全程依托人工智能辅助完成构建。发布者未审阅、未编写任何一行代码内容；若与其他项目存在代码雷同，那就是我抄了，仅供学习交流使用。
+> 本项目全程依托人工智能辅助完成构建。发布者未审阅、未编写任何一行代码内容；若与其他项目存在代码雷同，那就是我抄了，仅供学习交流使用，请在24小时内删除
+
+1. **非官方工具**：本工具是**第三方非官方工具**，与 Wallpaper Engine 官方、Steam 或 Valve 公司**无任何关联**。
+2. **仅限个人使用**：本工具**仅供个人学习、研究和技术交流使用**，不得用于任何商业用途。
+3. **尊重版权**：所有创意工坊内容版权均归原作者所有。请：
+   - 仅下载您**已订阅**或**有权访问**的内容
+   - 不得**传播、分发**下载的内容
+   - 支持原创作者，在 Steam 上**订阅和点赞**喜欢的壁纸
+4. **自用原则**：本工具仅为**简化个人下载流程**而开发。使用本工具意味着您**承诺**：
+   - 仅下载**自己订阅**的壁纸
+   - 不进行**批量下载**或**爬取**
+   - 不**绕过任何付费限制**
+5. **使用风险**：使用本工具可能违反 Steam 服务条款。您需自行承担所有风险，开发者**不承担任何责任**。
+6. **禁止滥用**：**严禁**使用本工具：
+   - 下载受版权保护且未授权的内容
+   - 进行商业用途
+   - 侵犯他人知识产权
+   - 违反当地法律法规
+7. **停止使用**：如您不同意以上条款，**请立即停止使用本工具**。
+
+*本项目仅为技术演示，下载后请在24小时内删除，并支持正版。*

@@ -113,7 +113,71 @@ const I18N = {
     videoQueuedTip: '视频已加入播放队列',
     videoNotReady: '视频暂不可用',
     playFailed: '播放失败: {msg}',
-    close: '关闭',  },
+    close: '关闭',
+    settingsTitle: '设置',
+    settingsBtnTitle: '设置',
+    queueBtnTitle: '下载队列',
+    languageSection: '语言 / Language',
+    accountSection: 'Steam 账号 / Account',
+    loginSteam: '登录 Steam 账号',
+    loggedInSteam: '已登录: {name} (点击退出)',
+    steamUserFallback: 'Steam用户',
+    steamApiPlaceholder: '输入你的 Steam API Key',
+    steamApiEnabled: '已启用 Steam API',
+    steamApiDisabled: '未启用 Steam API',
+    saveApiSettings: '保存 API 设置',
+    settingsSaved: '设置已保存',
+    saveFailed: '保存失败',
+    saveSettingsFailed: '保存设置失败',
+    serverSection: '服务端 / Server',
+    restartServer: '重启服务端',
+    loginTitle: 'Steam 账号登录',
+    loginInfo: '登录后可下载需要账号权限的壁纸。凭据仅保存在本地会话中。',
+    usernameLabel: 'Steam 用户名',
+    usernamePlaceholder: '输入 Steam 用户名',
+    passwordLabel: 'Steam 密码',
+    passwordPlaceholder: '输入 Steam 密码',
+    steamGuardLabel: 'Steam Guard 验证码',
+    steamGuardPlaceholder: '输入 Steam Guard 验证码',
+    steamGuardHint: '请检查邮箱或 Steam 手机应用获取验证码',
+    cancel: '取消',
+    login: '登录',
+    submitSteamGuard: '提交验证码',
+    loginRequired: '请输入用户名和密码',
+    loginChecking: '登录验证中...',
+    verifying: '验证中...',
+    steamGuardRequired: '请输入 Steam Guard 验证码',
+    loginFailed: '登录失败',
+    loginSuccess: '登录成功',
+    loginFailedCheck: '登录失败，请检查账号信息',
+    logoutConfirm: '确定要退出 Steam 登录吗？',
+    logoutFailed: '退出失败',
+    logoutSuccess: '已退出登录',
+    queueTitle: '📦 下载队列',
+    queueStartAll: '全部开始',
+    queuePauseAll: '全部暂停',
+    queueClearDone: '清理完成与失败',
+    queueEmpty: '当前队列空空如也',
+    queueNoCover: '无封面',
+    queueSizeUnknown: '大小未知',
+    queuePlay: '播放',
+    queueDownload: '下载',
+    bgDownload: '添加到后台下载',
+    queuePause: '暂停',
+    queueResume: '继续',
+    queuePriority: '调整优先级',
+    queueMoveUp: '上移',
+    queueMoveDown: '下移',
+    queueDelete: '删除',
+    jumpPageTitleAttr: '输入页码跳转',
+    searchAuthorTitle: '搜TA的作品',
+    qPending: '排队中',
+    qDownloading: '下载中',
+    qMoving: '转移中',
+    qPaused: '已暂停',
+    qError: '失败',
+    qCompleted: '已完成',
+  },
   en: {
     docTitle: 'WE · Steam Workshop Wallpapers',
     searchPlaceholder: 'Search wallpapers...',
@@ -217,6 +281,69 @@ const I18N = {
     videoNotReady: 'Video is still caching. Please try again later.',
     playFailed: 'Play failed: {msg}',
     close: 'Close',
+    settingsTitle: 'Settings',
+    settingsBtnTitle: 'Settings',
+    queueBtnTitle: 'Download queue',
+    languageSection: 'Language',
+    accountSection: 'Steam Account',
+    loginSteam: 'Log in to Steam',
+    loggedInSteam: 'Logged in: {name} (click to sign out)',
+    steamUserFallback: 'Steam user',
+    steamApiPlaceholder: 'Enter your Steam API Key',
+    steamApiEnabled: 'Steam API enabled',
+    steamApiDisabled: 'Steam API disabled',
+    saveApiSettings: 'Save API Settings',
+    settingsSaved: 'Settings saved',
+    saveFailed: 'Save failed',
+    saveSettingsFailed: 'Failed to save settings',
+    serverSection: 'Server',
+    restartServer: 'Restart server',
+    loginTitle: 'Steam Account Login',
+    loginInfo: 'Log in to download wallpapers that require account access. Credentials are kept only in the local session.',
+    usernameLabel: 'Steam username',
+    usernamePlaceholder: 'Enter Steam username',
+    passwordLabel: 'Steam password',
+    passwordPlaceholder: 'Enter Steam password',
+    steamGuardLabel: 'Steam Guard code',
+    steamGuardPlaceholder: 'Enter Steam Guard code',
+    steamGuardHint: 'Check your email or Steam mobile app for the code',
+    cancel: 'Cancel',
+    login: 'Log in',
+    submitSteamGuard: 'Submit code',
+    loginRequired: 'Please enter username and password',
+    loginChecking: 'Checking login...',
+    verifying: 'Verifying...',
+    steamGuardRequired: 'Enter the Steam Guard code',
+    loginFailed: 'Login failed',
+    loginSuccess: 'Login successful',
+    loginFailedCheck: 'Login failed. Check your account information.',
+    logoutConfirm: 'Sign out of Steam?',
+    logoutFailed: 'Sign out failed',
+    logoutSuccess: 'Signed out',
+    queueTitle: '📦 Download Queue',
+    queueStartAll: 'Start All',
+    queuePauseAll: 'Pause All',
+    queueClearDone: 'Clear Completed/Failed',
+    queueEmpty: 'The queue is empty',
+    queueNoCover: 'No cover',
+    queueSizeUnknown: 'Size unknown',
+    queuePlay: 'Play',
+    queueDownload: 'Download',
+    bgDownload: 'Add to background downloads',
+    queuePause: 'Pause',
+    queueResume: 'Resume',
+    queuePriority: 'Adjust priority',
+    queueMoveUp: 'Move up',
+    queueMoveDown: 'Move down',
+    queueDelete: 'Delete',
+    jumpPageTitleAttr: 'Enter page number',
+    searchAuthorTitle: 'Search this author',
+    qPending: 'Queued',
+    qDownloading: 'Downloading',
+    qMoving: 'Moving',
+    qPaused: 'Paused',
+    qError: 'Failed',
+    qCompleted: 'Completed',
   }
 };
 
@@ -285,9 +412,13 @@ function switchLanguage(lang){
   localStorage.setItem('wallhub-lang', lang);
   applyLanguage();
   updateSettingsCheckmarks();
+  updateSteamApiToggleUI();
+  checkSteamLoginStatus();
   renderGenreGrid();
   renderItems(S.items || []);
   renderPagination();
+  lastQueueRenderKey = '';
+  fetchQueue();
 }
 function applyLanguage(){
   document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
@@ -305,6 +436,8 @@ function applyLanguage(){
   const usageBtn = document.getElementById('usageBtn');
   const filterBtn = document.getElementById('filterBtn');
   const genreToggleBtn = document.getElementById('genreToggleBtn');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const queueBtn = document.getElementById('queueBtn');
   if (searchInput) searchInput.placeholder = t('searchPlaceholder');
   if (searchBtn) {
     searchBtn.title = t('searchTitle');
@@ -313,6 +446,14 @@ function applyLanguage(){
   if (usageBtn) {
     usageBtn.title = t('usageBtn');
     usageBtn.setAttribute('aria-label', t('usageBtn'));
+  }
+  if (settingsBtn) {
+    settingsBtn.title = t('settingsBtnTitle');
+    settingsBtn.setAttribute('aria-label', t('settingsBtnTitle'));
+  }
+  if (queueBtn) {
+    queueBtn.title = t('queueBtnTitle');
+    queueBtn.setAttribute('aria-label', t('queueBtnTitle'));
   }
   if (filterBtn) setFirstTextNode(filterBtn, t('filterBtn'));
   if (genreToggleBtn) genreToggleBtn.textContent = activeGenres.size === GENRES.length ? t('clear') : t('selectAll');
@@ -378,6 +519,8 @@ function applyLanguage(){
   if (mPlayBtn) setFirstTextNode(mPlayBtn, currentLang === 'zh' ? '播放视频' : t('playVideo'));
   const mWatchLaterBtn = document.getElementById('mWatchLaterBtn');
   if (mWatchLaterBtn) setFirstTextNode(mWatchLaterBtn, currentLang === 'zh' ? '稍后再看' : t('watchLater'));
+  const mBgDownloadBtn = document.getElementById('mBgDownloadBtn');
+  if (mBgDownloadBtn) setFirstTextNode(mBgDownloadBtn, t('bgDownload'));
   const mSteam = document.getElementById('mSteam');
   if (mSteam) setFirstTextNode(mSteam, t('steamPage'));
   const usageTitle = document.querySelector('.usage-title');
@@ -392,6 +535,47 @@ function applyLanguage(){
   if (usageNote) usageNote.textContent = t('usageNote');
   const siteDisclaimerText = document.getElementById('siteDisclaimerText');
   if (siteDisclaimerText) siteDisclaimerText.textContent = t('disclaimerText');
+  const settingsTitle = document.querySelector('#settingsModalOv .settings-modal-title');
+  if (settingsTitle) settingsTitle.textContent = t('settingsTitle');
+  const settingsSections = document.querySelectorAll('#settingsModalOv .settings-section-title');
+  if (settingsSections[0]) settingsSections[0].textContent = t('languageSection');
+  if (settingsSections[1]) settingsSections[1].textContent = t('accountSection');
+  if (settingsSections[2]) settingsSections[2].textContent = 'Steam API';
+  if (settingsSections[3]) settingsSections[3].textContent = t('serverSection');
+  const apiInput = document.getElementById('steamApiKeyInput');
+  if (apiInput) apiInput.placeholder = t('steamApiPlaceholder');
+  const saveApiBtn = document.querySelector('#settingsModalOv .settings-save-btn');
+  if (saveApiBtn) saveApiBtn.textContent = t('saveApiSettings');
+  const restartTxt = document.getElementById('restartServerText');
+  if (restartTxt) restartTxt.textContent = t('restartServer');
+  const loginTitle = document.querySelector('#loginModalOv .login-modal-title');
+  if (loginTitle) loginTitle.textContent = t('loginTitle');
+  const loginInfo = document.querySelector('#loginModalOv .login-info span');
+  if (loginInfo) loginInfo.textContent = t('loginInfo');
+  const userLabel = document.querySelector('label[for="steamUsername"]');
+  if (userLabel) userLabel.textContent = t('usernameLabel');
+  const userInput = document.getElementById('steamUsername');
+  if (userInput) userInput.placeholder = t('usernamePlaceholder');
+  const passLabel = document.querySelector('label[for="steamPassword"]');
+  if (passLabel) passLabel.textContent = t('passwordLabel');
+  const passInput = document.getElementById('steamPassword');
+  if (passInput) passInput.placeholder = t('passwordPlaceholder');
+  const guardLabel = document.querySelector('label[for="steamGuardCode"]');
+  if (guardLabel) guardLabel.textContent = t('steamGuardLabel');
+  const guardInput = document.getElementById('steamGuardCode');
+  if (guardInput) guardInput.placeholder = t('steamGuardPlaceholder');
+  const guardHint = document.querySelector('#steamGuardGroup .form-hint');
+  if (guardHint) guardHint.textContent = t('steamGuardHint');
+  const loginCancel = document.querySelector('#loginModalOv .login-modal-foot .btn-s');
+  if (loginCancel) loginCancel.textContent = t('cancel');
+  const loginSubmit = document.getElementById('loginSubmitBtn');
+  if (loginSubmit && !loginSubmit.disabled) loginSubmit.textContent = t('login');
+  const queueTitle = document.querySelector('#queueModalOv .settings-modal-title');
+  if (queueTitle) queueTitle.textContent = t('queueTitle');
+  const queueButtons = document.querySelectorAll('#queueModalOv .settings-modal-head .btn-s');
+  if (queueButtons[0]) queueButtons[0].textContent = t('queueStartAll');
+  if (queueButtons[1]) queueButtons[1].textContent = t('queuePauseAll');
+  if (queueButtons[2]) queueButtons[2].textContent = t('queueClearDone');
 }
 
 function setupEvents(){
@@ -499,7 +683,7 @@ async function loadCacheSettings(){
 function updateSteamApiToggleUI(){
   const txt = document.getElementById('steamApiToggleText');
   const chk = document.getElementById('steamApiToggleCheck');
-  if(txt) txt.textContent = steamApiEnabled ? '已启用 Steam API' : '未启用 Steam API';
+  if(txt) txt.textContent = steamApiEnabled ? t('steamApiEnabled') : t('steamApiDisabled');
   if(chk) chk.style.display = steamApiEnabled ? 'inline' : 'none';
 }
 
@@ -521,13 +705,13 @@ async function saveCacheSettings(){
     });
     
     if(res.ok){
-      toast('设置已保存', 'ok');
+      toast(t('settingsSaved'), 'ok');
     } else {
-      throw new Error('保存失败');
+      throw new Error(t('saveFailed'));
     }
   } catch(e){
     console.error('[Cache] Save failed:', e);
-    toast('保存设置失败', 'warn');
+    toast(t('saveSettingsFailed'), 'warn');
   }
 }
 
@@ -905,7 +1089,7 @@ function renderPagination(){
     <button class="pbtn" onclick="goPage(${cur-1})" ${cur===1?'disabled':''}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>${t('prevPage')}</button>
     ${pages.map(p=>p==='…'
       // 省略号点击跳转页码
-      ?`<button class="pbtn" onclick="promptPageJump()" title="输入页码跳转">…</button>`
+      ?`<button class="pbtn" onclick="promptPageJump()" title="${t('jumpPageTitleAttr')}">…</button>`
       :`<button class="pbtn ${p===cur?'cur':''}" onclick="goPage(${p})">${p}</button>`
     ).join('')}
     <button class="pbtn" onclick="goPage(${cur+1})" ${cur===tot?'disabled':''}>${t('nextPage')}<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>`;
@@ -978,7 +1162,7 @@ function openModal(id){
   document.getElementById('mTitle').textContent = item.title||t('untitled');
   const cid = item.creator || '';
   const authorHtml = cid 
-    ? `<span style="cursor:pointer; color:var(--accent); text-decoration:underline;" onclick="searchByCreator('${cid}')" title="搜TA的作品">${t('authorLoading')} 🔍</span>`
+    ? `<span style="cursor:pointer; color:var(--accent); text-decoration:underline;" onclick="searchByCreator('${cid}')" title="${t('searchAuthorTitle')}">${t('authorLoading')} 🔍</span>`
     : `<span>${t('authorLoading')}</span>`;
   document.getElementById('mSub').innerHTML = `<span>🆔 ${id}</span>${authorHtml}`;
   document.getElementById('mImg').src   = thumb||PLACEHOLDER;
@@ -1031,7 +1215,7 @@ function openModal(id){
         const finalCid = d.creator || item.creator || '';
         const finalAuthor = esc(d.author || item.author || t('unknown'));
         const aHtml = finalCid 
-          ? `<span style="cursor:pointer; color:var(--accent); text-decoration:underline;" onclick="searchByCreator('${finalCid}')" title="搜TA的作品">${currentLang === 'en' ? 'Author' : '作者'}: ${finalAuthor} 🔍</span>`
+          ? `<span style="cursor:pointer; color:var(--accent); text-decoration:underline;" onclick="searchByCreator('${finalCid}')" title="${t('searchAuthorTitle')}">${currentLang === 'en' ? 'Author' : '作者'}: ${finalAuthor} 🔍</span>`
           : `<span>${currentLang === 'en' ? 'Author' : '作者'}: ${finalAuthor}</span>`;
         document.getElementById('mSub').innerHTML=`<span>🆔 ${id}</span>${aHtml}`;
       }
@@ -1288,17 +1472,17 @@ function updateLoginButton(loggedIn, username){
   
   if(loggedIn){
     btn.classList.add('logged-in');
-    txt.textContent = `已登录: ${username || 'Steam用户'} (点击退出)`;
+    txt.textContent = t('loggedInSteam', { name: username || t('steamUserFallback') });
     btn.onclick = showLogoutConfirm;
   } else {
     btn.classList.remove('logged-in');
-    txt.textContent = '登录 Steam 账号';
+    txt.textContent = t('loginSteam');
     btn.onclick = openLoginModal;
   }
 }
 
 function showLogoutConfirm(){
-  if(confirm('确定要退出 Steam 登录吗？')){
+  if(confirm(t('logoutConfirm'))){
     logoutSteam();
   }
 }
@@ -1306,12 +1490,12 @@ function showLogoutConfirm(){
 async function logoutSteam(){
   try {
     const res = await fetch('/api/steam/logout', { method: 'POST' });
-    if(!res.ok) throw new Error('退出失败');
+    if(!res.ok) throw new Error(t('logoutFailed'));
     const data = await res.json();
-    toast(data.message || '已退出登录', 'ok');
+    toast(data.message || t('logoutSuccess'), 'ok');
     updateLoginButton(false, null);
   } catch(e) {
-    toast('退出失败: ' + e.message, 'warn');
+    toast(t('logoutFailed') + ': ' + e.message, 'warn');
   }
 }
 
@@ -1328,7 +1512,7 @@ function openLoginModal(){
   
   // 重置按钮文字
   const btn = document.getElementById('loginSubmitBtn');
-  if(btn) btn.textContent = '登录';
+  if(btn) btn.textContent = t('login');
   
   document.getElementById('steamUsername').focus();
 }
@@ -1350,14 +1534,14 @@ async function submitSteamLogin(){
   const isRetry = guardGroup && guardGroup.style.display !== 'none';
   
   if(!username || !password){
-    toast('请输入用户名和密码', 'warn');
+    toast(t('loginRequired'), 'warn');
     return;
   }
   
   const btn = document.getElementById('loginSubmitBtn');
   const originalText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = isRetry ? '验证中...' : '登录验证中...';
+  btn.textContent = isRetry ? t('verifying') : t('loginChecking');
   
   try {
     const res = await fetch('/api/steam/login', {
@@ -1370,28 +1554,28 @@ async function submitSteamLogin(){
     
     if(res.status === 202 && data.needsSteamGuard){
       // 需要 Steam Guard 验证码
-      toast('请输入 Steam Guard 验证码', 'info');
+      toast(t('steamGuardRequired'), 'info');
       if(guardGroup) {
         guardGroup.style.display = '';
         document.getElementById('steamGuardCode').focus();
       }
       btn.disabled = false;
-      btn.textContent = '提交验证码';
+      btn.textContent = t('submitSteamGuard');
       return;
     }
     
     if(!res.ok){
-      throw new Error(data.error || '登录失败');
+      throw new Error(data.error || t('loginFailed'));
     }
     
-    toast(data.message || '登录成功', 'ok');
+    toast(data.message || t('loginSuccess'), 'ok');
     updateLoginButton(true, username);
     closeLoginModal();
   } catch(e) {
     console.error('[Login Error]', e);
-    toast(e.message || '登录失败，请检查账号信息', 'warn');
+    toast(e.message || t('loginFailedCheck'), 'warn');
   } finally {
-    if(btn.textContent !== '提交验证码') {
+    if(btn.textContent !== t('submitSteamGuard')) {
       btn.disabled = false;
       btn.textContent = originalText;
     }
@@ -1452,36 +1636,38 @@ function getQueueStructureKey(list) {
 
 function renderQueueEmpty(container) {
   if (lastQueueRenderKey === 'empty' && container.querySelector('.queue-empty')) return;
-  container.innerHTML = '<div class="queue-empty"><div class="queue-empty-icon">📦</div><div class="queue-empty-text">当前队列空空如也 🍃</div></div>';
+  container.innerHTML = `<div class="queue-empty"><div class="queue-empty-icon">📦</div><div class="queue-empty-text">${t('queueEmpty')}</div></div>`;
   lastQueueRenderKey = 'empty';
   lastQueueItemKeys = new Set();
 }
 
 function updateQueueCardMetrics(list, data) {
-  list.forEach(t => {
-    const id = String(t.id || t.cacheKey || '');
-    const key = getQueueItemKey(t);
+  list.forEach(item => {
+    const id = String(item.id || item.cacheKey || '');
+    const key = getQueueItemKey(item);
     const safeKey = window.CSS && CSS.escape ? CSS.escape(key) : key.replace(/["\\]/g, '\\$&');
     const card = document.querySelector(`.q-item[data-qkey="${safeKey}"]`);
     if (!card) return;
-    const prog = Math.max(0, Math.min(100, Number(t.progress || 0)));
-    const total = Number(t.total || t.size || 0);
-    const downloaded = Number(t.downloaded || (t.status === 'completed' ? total : 0));
-    const sizeStr = total > 0 ? `${formatBytesLocal(downloaded)} / ${formatBytesLocal(total)}` : (downloaded > 0 ? formatBytesLocal(downloaded) : '大小未知');
-    const speedStr = t.status === 'downloading' ? ` · ${formatQueueSpeed(t.speed || data.rxSpeed || 0)}` : '';
-    const statusMap = { pending:'排队中', downloading:'下载中', moving:'转移中', paused:'已暂停', error:'失败', completed:'已完成' };
-    const sText = statusMap[t.status] || t.status || '';
+    const prog = Math.max(0, Math.min(100, Number(item.progress || 0)));
+    const total = Number(item.total || item.size || 0);
+    const downloaded = Number(item.downloaded || (item.status === 'completed' ? total : 0));
+    const sizeStr = total > 0 ? `${formatBytesLocal(downloaded)} / ${formatBytesLocal(total)}` : (downloaded > 0 ? formatBytesLocal(downloaded) : t('queueSizeUnknown'));
+    const speedStr = item.status === 'downloading' ? ` · ${formatQueueSpeed(item.speed || data.rxSpeed || 0)}` : '';
+    const statusMap = { pending:t('qPending'), downloading:t('qDownloading'), moving:t('qMoving'), paused:t('qPaused'), error:t('qError'), completed:t('qCompleted') };
+    const sText = statusMap[item.status] || item.status || '';
     const bar = card.querySelector('.q-bar-fill');
     const sizeEl = card.querySelector('[data-qmetric="size"]');
     const pctEl = card.querySelector('[data-qmetric="progress"]');
     const statusEl = card.querySelector('.q-status');
+    const errorEl = card.querySelector('.q-error');
     if (bar) bar.style.width = prog + '%';
     if (sizeEl) sizeEl.textContent = sizeStr + speedStr;
     if (pctEl) pctEl.textContent = prog.toFixed(1) + '%';
     if (statusEl) {
-      statusEl.className = `q-status ${t.status || ''}`;
+      statusEl.className = `q-status ${item.status || ''}`;
       statusEl.textContent = sText;
     }
+    if (errorEl) errorEl.textContent = item.status === 'error' ? (item.errorMsg || '') : '';
     card.dataset.id = esc(id);
   });
 }
@@ -1518,18 +1704,50 @@ function openQueueItemDetail(id) {
 function animateQueueCard(action, id) {
   const el = document.querySelector(queueCardSelector(action, id));
   if (!el) return Promise.resolve();
-  const cls = action === 'up'
-    ? 'q-anim-up'
-    : action === 'down'
-      ? 'q-anim-down'
-      : (action === 'delete' || action === 'delete_cache')
-        ? 'q-anim-delete'
-        : '';
+  const cls = (action === 'delete' || action === 'delete_cache') ? 'q-anim-delete' : '';
   if (!cls) return Promise.resolve();
-  el.classList.remove('q-anim-up', 'q-anim-down', 'q-anim-delete');
+  el.classList.remove('q-anim-delete');
   void el.offsetWidth;
   el.classList.add(cls);
   return new Promise(resolve => setTimeout(resolve, cls === 'q-anim-delete' ? 220 : 180));
+}
+
+function captureQueueItemRects() {
+  const rects = new Map();
+  document.querySelectorAll('#queueList .q-item[data-qkey]').forEach(el => {
+    rects.set(el.dataset.qkey, el.getBoundingClientRect());
+  });
+  return rects;
+}
+
+function animateQueueReorderFrom(oldRects) {
+  if (!oldRects || !oldRects.size) return;
+  const moved = [];
+  document.querySelectorAll('#queueList .q-item[data-qkey]').forEach(el => {
+    const oldRect = oldRects.get(el.dataset.qkey);
+    if (!oldRect) return;
+    const newRect = el.getBoundingClientRect();
+    const dx = oldRect.left - newRect.left;
+    const dy = oldRect.top - newRect.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    el.style.transition = 'none';
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    moved.push(el);
+  });
+  if (!moved.length) return;
+  requestAnimationFrame(() => {
+    moved.forEach(el => {
+      el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 220ms ease, box-shadow 220ms ease';
+      el.style.transform = '';
+      el.classList.add('q-anim-reorder');
+    });
+    setTimeout(() => {
+      moved.forEach(el => {
+        el.style.transition = '';
+        el.classList.remove('q-anim-reorder');
+      });
+    }, 240);
+  });
 }
 
 async function fetchQueue() {
@@ -1549,9 +1767,11 @@ async function fetchQueue() {
       else { badge.style.display = 'none'; }
     }
 
-    if (!document.getElementById('queueModalOv').classList.contains('open')) return;
+    const queueModal = document.getElementById('queueModalOv');
+    if (!queueModal || !queueModal.classList.contains('open')) return;
 
     const container = document.getElementById('queueList');
+    if (!container) return;
     if (!list.length) {
       renderQueueEmpty(container);
       return;
@@ -1567,52 +1787,75 @@ async function fetchQueue() {
     lastQueueRenderKey = structureKey;
     lastQueueItemKeys = currentKeys;
 
-    // 渲染包含进度、大小、速度、播放/删除操作的统一队列列表
-    container.innerHTML = list.map(t => {
-      const id = String(t.id || t.cacheKey || '');
-      const key = getQueueItemKey(t);
+// 渲染包含进度、大小、速度、播放/删除操作的统一队列列表
+    container.innerHTML = list.map(item => {
+      const id = String(item.id || item.cacheKey || '');
+      const key = getQueueItemKey(item);
       const isNewItem = !previousKeys.has(key);
-      const prog = Math.max(0, Math.min(100, Number(t.progress || 0)));
+      const prog = Math.max(0, Math.min(100, Number(item.progress || 0)));
       const progStr = prog.toFixed(1) + '%';
-      const statusMap = { pending:'排队中', downloading:'下载中', moving:'转移中', paused:'已暂停', error:'失败', completed:'已完成' };
-      const sText = statusMap[t.status] || t.status;
-      const isCache = t.source === 'cache';
-      const title = t.title || t.name || id;
-      const total = Number(t.total || t.size || 0);
-      const downloaded = Number(t.downloaded || (t.status === 'completed' ? total : 0));
-      const sizeStr = total > 0 ? `${formatBytesLocal(downloaded)} / ${formatBytesLocal(total)}` : (downloaded > 0 ? formatBytesLocal(downloaded) : '大小未知');
-      const speedStr = t.status === 'downloading' ? ` · ${formatQueueSpeed(t.speed || data.rxSpeed || 0)}` : '';
-      const cover = t.coverUrl ? `<img class="queue-cover" src="${esc(t.coverUrl)}" alt="cover">` : '';
-      const playBtn = (t.isVideo || t.canPlay)
-        ? `<button class="q-btn" onclick="event.stopPropagation(); ${isCache ? `playCachedItem('${esc(t.cacheKey || id)}','${esc(title)}')` : `playVideoNow(${Number(id)}, '${esc(title)}')`}">播放</button>`
+      const statusMap = { pending:t('qPending'), downloading:t('qDownloading'), moving:t('qMoving'), paused:t('qPaused'), error:t('qError'), completed:t('qCompleted') };
+      const sText = statusMap[item.status] || item.status;
+      const isCache = item.source === 'cache';
+      const title = item.title || item.name || id;
+      const total = Number(item.total || item.size || 0);
+      const downloaded = Number(item.downloaded || (item.status === 'completed' ? total : 0));
+      const sizeStr = total > 0 ? `${formatBytesLocal(downloaded)} / ${formatBytesLocal(total)}` : (downloaded > 0 ? formatBytesLocal(downloaded) : t('queueSizeUnknown'));
+      const speedStr = item.status === 'downloading' ? ` · ${formatQueueSpeed(item.speed || data.rxSpeed || 0)}` : '';
+      const cover = item.coverUrl ? `<img class="queue-cover" src="${esc(item.coverUrl)}" alt="cover">` : `<div class="queue-cover queue-cover-placeholder">${t('queueNoCover')}</div>`;
+      
+      const playBtn = item.status === 'completed' && (item.isVideo || item.canPlay)
+        ? `<button class="q-btn" onclick="event.stopPropagation(); ${isCache ? `playCachedItem('${esc(item.cacheKey || id)}','${esc(title)}')` : `playVideoNow(${Number(id)}, '${esc(title)}')`}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            ${t('queuePlay')}
+           </button>`
         : '';
-      const downloadBtn = t.status === 'completed'
-        ? `<button class="q-btn q-download" onclick="event.stopPropagation(); clientDownloadWall(${Number(id)}, '${esc(title)}')">下载</button>`
+        
+      const downloadBtn = item.status === 'completed'
+        ? `<button class="q-btn q-download" onclick="event.stopPropagation(); clientDownloadWall(${Number(id)}, '${esc(title)}')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            ${t('queueDownload')}
+           </button>`
         : '';
+        
       const deleteAction = isCache ? 'delete_cache' : 'delete';
-      const deleteArg = isCache ? `'${esc(t.cacheKey || id)}'` : Number(id);
+      const deleteArg = isCache ? `'${esc(item.cacheKey || id)}'` : Number(id);
+      const priorityControl = !isCache && item.status !== 'completed'
+        ? `<div class="q-priority-group" role="group" aria-label="${t('queuePriority')}">
+             <button class="q-priority-half" onclick="event.stopPropagation(); qAction('up', ${Number(id)})" title="${t('queueMoveUp')}" aria-label="${t('queueMoveUp')}"><span class="q-priority-icon q-up" aria-hidden="true"></span></button>
+             <button class="q-priority-half" onclick="event.stopPropagation(); qAction('down', ${Number(id)})" title="${t('queueMoveDown')}" aria-label="${t('queueMoveDown')}"><span class="q-priority-icon q-down" aria-hidden="true"></span></button>
+           </div>`
+        : '';
+      
       return `
-      <div class="q-item ${isNewItem ? 'q-anim-enter' : ''}" data-qkey="${esc(key)}" data-source="${isCache ? 'cache' : 'queue'}" data-id="${esc(isCache ? (t.cacheKey || id) : id)}" onclick="${isCache ? `openQueueItemDetail('${esc(t.cacheKey || id)}')` : `openQueueItemDetail('${esc(id)}')`}">
+      <div class="q-item ${isNewItem ? 'q-anim-enter' : ''}" data-qkey="${esc(key)}" data-source="${isCache ? 'cache' : 'queue'}" data-id="${esc(isCache ? (item.cacheKey || id) : id)}" onclick="${isCache ? `openQueueItemDetail('${esc(item.cacheKey || id)}')` : `openQueueItemDetail('${esc(id)}')`}">
         <div class="q-head">
-          <div class="queue-head">${cover}<span class="q-title" title="${esc(title)}">${esc(title)}</span></div>
-          <span class="q-status ${t.status}">${sText}</span>
-        </div>
-        ${t.status === 'error' ? `<div style="font-size:12px; color:var(--danger); margin-top:-4px;">${esc(t.errorMsg)}</div>` : ''}
-        
-        <div class="q-bar-bg"><div class="q-bar-fill" style="width: ${prog}%"></div></div>
-        <div class="q-info">
-          <span data-qmetric="size">${sizeStr}${speedStr}</span>
-          <span data-qmetric="progress">${progStr}</span>
-        </div>
-        
-        <div class="q-actions">
-          ${playBtn}
-          ${downloadBtn}
-          ${(!isCache && (t.status === 'downloading' || t.status === 'pending')) ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('pause', ${Number(id)})">暂停</button>` : ''}
-          ${(!isCache && (t.status === 'paused' || t.status === 'error')) ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('resume', ${Number(id)})">继续</button>` : ''}
-          ${!isCache && t.status !== 'completed' ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('up', ${Number(id)})">上移</button>` : ''}
-          ${!isCache && t.status !== 'completed' ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('down', ${Number(id)})">下移</button>` : ''}
-          <button class="q-btn danger" onclick="event.stopPropagation(); qAction('${deleteAction}', ${deleteArg})">删除</button>
+          <div class="queue-head">${cover}</div>
+          <div class="q-content">
+            <div class="q-topline">
+              <div class="q-title-wrap ${item.status === 'error' ? 'has-error' : ''}">
+                <span class="q-title" title="${esc(title)}">${esc(title)}</span>
+                ${item.status === 'error' ? `<div class="q-error">${esc(item.errorMsg)}</div>` : ''}
+              </div>
+              <span class="q-status ${item.status}">${sText}</span>
+            </div>
+            <div class="q-bar-bg"><div class="q-bar-fill" style="width: ${prog}%"></div></div>
+            <div class="q-info">
+              <span data-qmetric="size">${sizeStr}${speedStr}</span>
+              <span data-qmetric="progress">${progStr}</span>
+            </div>
+            <div class="q-actions">
+              ${playBtn}
+              ${downloadBtn}
+              ${(!isCache && (item.status === 'downloading' || item.status === 'pending')) ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('pause', ${Number(id)})"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>${t('queuePause')}</button>` : ''}
+              ${(!isCache && (item.status === 'paused' || item.status === 'error')) ? `<button class="q-btn" onclick="event.stopPropagation(); qAction('resume', ${Number(id)})"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>${t('queueResume')}</button>` : ''}
+              ${priorityControl}
+              <button class="q-btn danger" onclick="event.stopPropagation(); qAction('${deleteAction}', ${deleteArg})">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                ${t('queueDelete')}
+              </button>
+            </div>
+          </div>
         </div>
       </div>`;
     }).join('');
@@ -1623,7 +1866,8 @@ async function fetchQueue() {
 
 async function qAction(action, id) {
   try {
-    const shouldAnimateFirst = ['up', 'down', 'delete', 'delete_cache'].includes(action);
+    const reorderRects = (action === 'up' || action === 'down') ? captureQueueItemRects() : null;
+    const shouldAnimateFirst = ['delete', 'delete_cache'].includes(action);
     if (shouldAnimateFirst) await animateQueueCard(action, id);
     const res = await fetch('/api/queue/action', {
       method: 'POST',
@@ -1635,7 +1879,13 @@ async function qAction(action, id) {
     if (action === 'delete' || action === 'delete_cache') {
       toast(currentLang === 'en' ? 'Deleted' : '已删除', 'ok');
     }
-    fetchQueue(); // 操作后立刻刷新UI
+    if (reorderRects) {
+      lastQueueRenderKey = '';
+      await fetchQueue();
+      animateQueueReorderFrom(reorderRects);
+    } else {
+      fetchQueue(); // 操作后立刻刷新UI
+    }
   } catch (e) {
     console.error('Queue action failed:', e);
     toast((currentLang === 'en' ? 'Action failed: ' : '操作失败: ') + e.message, 'warn');

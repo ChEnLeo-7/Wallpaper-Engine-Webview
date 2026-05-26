@@ -1190,28 +1190,42 @@ async function handleDetails(res, id) {
     try {
       const cUrl = `https://steamcommunity.com/comment/PublishedFile_Public/render/${id}/-1/`;
       const cBody = 'start=0&count=50&feature2=-1&l=schinese&userreview_offset=-1';
-      const u = new URL(cUrl);
-      const buf = await doRequest({
-        protocol: u.protocol,
-        hostname: u.hostname,
-        port: u.port ? parseInt(u.port) : undefined,
-        path: u.pathname + u.search,
-        method: 'POST',
-        headers: {
+      const requestComments = async (method) => {
+        const u = new URL(method === 'GET' ? `${cUrl}?${cBody}` : cUrl);
+        const headers = {
           'User-Agent': UA,
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          'Content-Length': Buffer.byteLength(cBody),
-          'Accept': '*/*',
+          'Accept': 'application/json,text/javascript,*/*;q=0.01',
           'X-Requested-With': 'XMLHttpRequest',
           'Origin': 'https://steamcommunity.com',
           'Referer': `https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`,
           'Cookie': STEAM_PREF_COOKIE,
-        },
-        timeout: 9000
-      }, cBody);
-      const cData = JSON.parse(buf.toString('utf8'));
-      if (cData.success) return parseComments(cData.comments_html || '');
-      console.warn(`[Comments] Steam returned success=false, id=${id}`);
+        };
+        let body = null;
+        if (method === 'POST') {
+          headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+          headers['Content-Length'] = Buffer.byteLength(cBody);
+          body = cBody;
+        }
+        return doRequest({
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port ? parseInt(u.port) : undefined,
+          path: u.pathname + u.search,
+          method,
+          headers,
+          timeout: 9000
+        }, body);
+      };
+      for (const method of ['POST', 'GET']) {
+        const buf = await requestComments(method);
+        const cData = JSON.parse(buf.toString('utf8'));
+        const html = cData.comments_html || cData.html || cData.comments || '';
+        const comments = parseComments(html);
+        if (comments.length) return comments;
+        if (cData.success === false || cData.success === 0) {
+          console.warn(`[Comments] Steam returned success=false via ${method}, id=${id}`);
+        }
+      }
       return [];
     } catch (e) {
       console.warn('[Comments]', e.message);
@@ -1277,7 +1291,18 @@ function looksLikeSteamId(v) {
   return /^\d{17}$/.test(String(v || '').trim());
 }
 function cleanText(v) {
-  return String(v || '').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim();
+  return decodeHtml(String(v || '').replace(/<[^>]+>/g,'')).replace(/\s+/g,' ').trim();
+}
+function decodeHtml(v) {
+  return String(v || '')
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'");
 }
 async function resolvePersonaName(steamId) {
   const sid = String(steamId || '').trim();
@@ -1343,14 +1368,36 @@ function parseDetailHtml(html) {
 function parseComments(html) {
   if (!html) return [];
   const out = [];
-  const re = /<a[^>]*class="[^"]*commentthread_author_link[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,2400}?<span[^>]*class="[^"]*commentthread_comment_timestamp[^"]*"[^>]*>([\s\S]*?)<\/span>[\s\S]{0,4000}?<div[^>]*class="[^"]*commentthread_comment_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
-  for (const m of html.matchAll(re)) {
-    const author = (m[1] || '').replace(/<[^>]+>/g,'').trim() || 'Steam User';
-    const date   = (m[2] || '').replace(/<[^>]+>/g,'').trim();
-    const text   = (m[3] || '').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'').trim();
-    if (!text) continue;
+  const cleanComment = (v, keepBreaks) => decodeHtml(String(v || '')
+    .replace(/<br\s*\/?>/gi, keepBreaks ? '\n' : ' ')
+    .replace(/<[^>]+>/g, keepBreaks ? '' : ' ')
+  ).replace(keepBreaks ? /[ \t]+\n/g : /\s+/g, keepBreaks ? '\n' : ' ').trim();
+  const pushComment = (authorRaw, dateRaw, textRaw) => {
+    const author = cleanComment(authorRaw, false) || 'Steam User';
+    const date = cleanComment(dateRaw, false);
+    const text = cleanComment(textRaw, true);
+    if (!text) return;
     out.push({ author, date, text });
-    if (out.length >= 50) break;
+  };
+
+  const blockRe = /<div[^>]*id="comment_\d+"[^>]*class="[^"]*commentthread_comment[^"]*"[^>]*>[\s\S]*?(?=<div[^>]*id="comment_\d+"|$)/gi;
+  for (const m of html.matchAll(blockRe)) {
+    const block = m[0];
+    const authorM = block.match(/<a[^>]*class="[^"]*commentthread_author_link[^"]*"[^>]*>([\s\S]*?)<\/a>/i) ||
+                    block.match(/<span[^>]*class="[^"]*commentthread_author[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+    const dateM = block.match(/<span[^>]*class="[^"]*commentthread_comment_timestamp[^"]*"[^>]*>([\s\S]*?)<\/span>/i) ||
+                  block.match(/<div[^>]*class="[^"]*commentthread_comment_timestamp[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const textM = block.match(/<div[^>]*class="[^"]*commentthread_comment_text[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+                  block.match(/<div[^>]*class="[^"]*commentthread_text[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    if (!textM) continue;
+    pushComment(authorM ? authorM[1] : '', dateM ? dateM[1] : '', textM[1]);
+    if (out.length >= 50) return out;
+  }
+
+  const re = /<a[^>]*class="[^"]*commentthread_author_link[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,3000}?(?:<span|<div)[^>]*class="[^"]*commentthread_comment_timestamp[^"]*"[^>]*>([\s\S]*?)(?:<\/span>|<\/div>)[\s\S]{0,5000}?<div[^>]*class="[^"]*commentthread_comment_text[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;
+  for (const m of html.matchAll(re)) {
+    pushComment(m[1], m[2], m[3]);
+    if (out.length >= 50) return out;
   }
   return out;
 }
@@ -2013,6 +2060,29 @@ function findCachedItemDir(id) {
 
 function findQueueItemById(id) {
   return TASK_QUEUE.find(t => String(t.id) === String(id));
+}
+
+function enforceTopOnlyQueueRunner() {
+  const firstRunnable = TASK_QUEUE.find(t => t.status !== 'completed' && t.status !== 'cancelled');
+  for (const task of TASK_QUEUE) {
+    if (task === firstRunnable) {
+      if (task.status === 'paused' || task.status === 'error') {
+        task.status = 'pending';
+        task.speed = 0;
+      }
+      continue;
+    }
+    if (task.status === 'downloading') {
+      task.status = 'paused';
+      task.speed = 0;
+      if (task.processPromise && task.processPromise.kill) task.processPromise.kill();
+      if (task.cancelFn) task.cancelFn();
+    } else if (task.status === 'pending' || task.status === 'error') {
+      task.status = 'paused';
+      task.speed = 0;
+    }
+  }
+  triggerQueue();
 }
 
 function findDownloadedItemPath(id) {
@@ -2862,8 +2932,10 @@ const server = http.createServer(async (req, res) => {
         TASK_QUEUE.splice(idx, 1);
       } else if (action === 'up' && idx > 0) {
         [TASK_QUEUE[idx-1], TASK_QUEUE[idx]] = [TASK_QUEUE[idx], TASK_QUEUE[idx-1]];
+        enforceTopOnlyQueueRunner();
       } else if (action === 'down' && idx < TASK_QUEUE.length - 1) {
         [TASK_QUEUE[idx], TASK_QUEUE[idx+1]] = [TASK_QUEUE[idx+1], TASK_QUEUE[idx]];
+        enforceTopOnlyQueueRunner();
       }
       return jsonRes(res, 200, { success: true });
     }
