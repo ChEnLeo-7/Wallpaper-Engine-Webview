@@ -2,6 +2,12 @@
 
 > 一个 Web 版 Wallpaper Engine 创意工坊壁纸，支持 Steam 账号登录和在线视频播放。
 
+> [!CAUTION]
+>
+> # 本项目进入停止开发
+>
+> 项目已不再继续开发，后续更新和开发资源全部转到 [WallHub2.0](https://github.com/ChEnLeo-7/WallHub2.0)
+
 <p align="center">
   <a href="./README.en.md">English</a>
    · 
